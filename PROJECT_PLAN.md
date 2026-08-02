@@ -61,9 +61,14 @@ No concurrency benefit to interleaving tracks solo, so build in dependency order
    default) → `feature_store.py` (`get_features(track_id)` in-memory dict loader).
 3. **Track B — Bandit:** `reward_simulator.py` → policies in increasing complexity, each with
    a unit test before the next: `random_policy.py` → `epsilon_greedy.py` → `ucb1.py` →
-   `thompson_sampling.py` → `linucb.py` (ridge-regularized, guard matrix inversion) →
-   `replay_evaluator.py` → `compare_policies.py` (must show LinUCB beating Random on
-   cumulative regret).
+   `thompson_sampling.py` (Beta priors, non-contextual) → `linear_thompson_sampling.py`
+   (**added to the spec's original 5** — Bayesian linear model over the context vector,
+   Gaussian posterior per arm, sample-then-argmax action selection; this is the natural
+   contextual counterpart to plain Thompson Sampling, and gives the offline comparison a
+   frequentist-vs-Bayesian pair of contextual policies — LinUCB vs. Linear TS — rather than
+   only one contextual method) → `linucb.py` (ridge-regularized, guard matrix inversion) →
+   `replay_evaluator.py` → `compare_policies.py` (must show the contextual policies, LinUCB
+   and Linear TS, beating Random and the non-contextual policies on cumulative regret).
 4. **Track C — Serving & Streaming:** `service/schemas.py` → `service/main.py` (`/health`
    first, then `/recommend` wired to feature_store + build_user_context + one bandit policy,
    then `/feedback` with the reward map from `contracts/kafka_topics.md`) →
@@ -106,7 +111,8 @@ Run the full end-to-end smoke sequence (below) at every phase boundary, not just
 pytest tests/test_bandit_policies.py -k random -v
 pytest tests/test_bandit_policies.py -k epsilon_greedy -v
 pytest tests/test_bandit_policies.py -k ucb1 -v
-pytest tests/test_bandit_policies.py -k thompson -v
+pytest tests/test_bandit_policies.py -k "thompson and not linear" -v
+pytest tests/test_bandit_policies.py -k linear_thompson -v
 pytest tests/test_bandit_policies.py -k linucb -v
 pytest tests/test_api_contract.py -v
 ```
@@ -171,7 +177,8 @@ recommend/feedback loop are the graded/never-drop items — cut in this order, n
 - `data/synth_user_profiles.py`, `data/generate_synthetic_logs.py`, `data/extract_features.py`,
   `data/reconcile_datasets.py`, `data/build_user_context.py`, `data/feature_store.py`
 - `bandit/reward_simulator.py`, `bandit/policies/{random_policy,epsilon_greedy,ucb1,
-  thompson_sampling,linucb}.py`, `bandit/replay_evaluator.py`, `bandit/compare_policies.py`
+  thompson_sampling,linear_thompson_sampling,linucb}.py`, `bandit/replay_evaluator.py`,
+  `bandit/compare_policies.py`
 - `service/schemas.py`, `service/main.py`, `service/kafka_producer.py`,
   `service/kafka_consumer.py`, `service/demo_loadgen.py`, `service/Dockerfile`
 - `mlops/tracking.py`, `mlops/drift_report.py`, `mlops/dashboard.py`, `mlops/dags/retrain_policy.py`
