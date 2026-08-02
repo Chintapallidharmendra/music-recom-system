@@ -1,0 +1,10 @@
+datasets/
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+tests/
+mlops/drift_report.html
+*.docx
+PROJECT_PLAN.md
