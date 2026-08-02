@@ -104,6 +104,60 @@ calendar weeks (solo wall-clock will run longer on phases 1–2 than the team es
 
 Run the full end-to-end smoke sequence (below) at every phase boundary, not just at the end.
 
+## Policy swap on drift (canary lifecycle)
+
+This closes the loop the "canary is more than a config flag" risk raises: what actually
+happens end-to-end when `drift_report.py` sees drift, all the way to the service running a
+different policy — and specifically, **the swap is always a full-population replacement of
+the one serving policy, never a permanent per-user assignment.** The hash split
+(`hash(user_id) % 10`) only exists *during* the canary evaluation window, to decide whether a
+challenger is good enough; it is not a persistent segment. A user hashed into the 10%
+challenger bucket sees the challenger only until the canary resolves — at that point every
+user, regardless of which bucket they were in, ends up on the same single policy again
+(the promoted challenger, or back to the champion on rollback). Five stages, each owned by the
+track that already builds the piece:
+
+1. **Detect** (`mlops/drift_report.py`, Track D) — Evidently compares a reference window (the
+   context/feature distribution the current `Production`-staged policy was trained on) against
+   a recent window of live traffic. Emits a drift flag/score, logs it to MLflow as a metric on
+   a monitoring run.
+2. **Decide whether to retrain** (`mlops/dags/retrain_policy.py`, Track D) — add a
+   `check_drift` task right after `collect`, using Airflow's `BranchPythonOperator`: if drift
+   is below threshold, the DAG short-circuits (nothing changes — no split, no new policy). If
+   drift is over threshold, proceed to `update_features` → `retrain` (fit **one** fresh policy
+   instance on current `data/features.parquet` + `data/synthetic_logs.parquet` — a single
+   candidate, not one per user or per bucket) → `evaluate` (replay via
+   `bandit/replay_evaluator.py`) → `register` (push to the MLflow Model Registry tagged
+   **`Staging`** — it hasn't earned `Production` yet).
+3. **Canary rollout — temporary, population-wide split** (`service/main.py`, Track C) — a
+   background poller (interval, or a webhook the DAG's `register` task calls) loads the
+   `Staging` model in-process as `challenger` alongside the current `Production` model
+   (`champion`). For the duration of the canary window only, `hash(user_id) % 10 == 0` (10% of
+   *all* users, deterministically the same 10% for the window's length so results aren't
+   confounded by a user flipping sides mid-evaluation) is routed to `challenger`; the other 90%
+   keep seeing `champion` exactly as before. Every `recommendation-events` record carries the
+   `policy` field (frozen in `kafka_topics.md`), which is what lets `champion` vs `challenger`
+   reward be tracked separately during this window.
+4. **Evaluate the canary** (new Airflow task, `evaluate_canary`, Track D) — after a fixed dwell
+   window (e.g. N≈500 canary impressions or a fixed time delay — small/synthetic scale doesn't
+   justify full statistical-significance testing), pull each policy's logged mean reward/CTR
+   from MLflow and compare. This task is the one place the swap decision is made.
+5. **Resolve — collapse back to one policy for everyone** — if `challenger`'s mean reward beats
+   `champion`'s by more than a set margin: transition `challenger` → `Production`, old
+   `champion` → `Archived`, and on the poller's next check the service drops the split
+   entirely and routes **100% of all users** (including the 90% who were never in the canary
+   bucket) to what was `challenger`. If the challenger loses: transition it → `Archived`
+   instead, the split is torn down, and **100% of all users** (including the 10% who briefly
+   saw the challenger) simply continue on the original `champion`, unchanged. Either outcome
+   ends with exactly one active policy serving everyone — an `/admin/reload-policy` endpoint
+   should exist to force/inspect this manually during the demo, but no manual step is required
+   for the swap itself.
+
+Build order: since this depends on pieces from Track C (`main.py`'s poller) and Track D
+(drift check, canary-evaluate task, registry transitions) both existing, treat it as a small
+integration step done in Phase 2, right after Track D's `retrain_policy.py` DAG first runs
+end-to-end manually — not as part of either track's initial build-in-isolation pass.
+
 ## Verification
 
 **Per-file, before moving to the next** (spec's own discipline):
@@ -157,10 +211,10 @@ curl -s localhost:8000/metrics
   throwaway SQLite/LocalExecutor manual-trigger test first; only stand up the full
   docker-compose Airflow (Postgres+scheduler+webserver) stack in Phase 3.
 - **Canary logic is more than a config flag** — `service/main.py` must hold two live policy
-  instances simultaneously, route by `hash(user_id) % 10`, log which policy served each
-  request (the `policy` field already exists in `kafka_topics.md`'s schema), and reconcile
-  which object is "current" against MLflow registry stage transitions. Plan a small in-process
-  policy reload mechanism (poll interval or `/admin/reload-policy`), don't assume it's free.
+  instances simultaneously and reconcile which object is "current" against MLflow registry
+  stage transitions; see the dedicated "Policy swap on drift" section above for the full
+  detect→retrain→canary→evaluate→resolve lifecycle and why the split is temporary and
+  population-wide, not a permanent per-user assignment.
 - **CI/CD "auto-deploy" needs a concrete target** — default to pushing the Docker image to
   GHCR/tag on push, not an actual remote server, unless one is specifically wanted.
 
