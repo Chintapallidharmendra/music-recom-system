@@ -40,13 +40,16 @@ def extract_features(path: str) -> dict:
     y, sr = librosa.load(path, sr=22050, mono=True)
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    # tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    onset_env = librosa.feature.onset_strength(y=y, sr=sr)
+    tempo = librosa.feature.tempo(onset_env=onset_env, sr=sr)[0]
     contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
     return {
         "mfcc_mean": mfcc.mean(axis=1).astype(np.float32),
         "mfcc_var": mfcc.var(axis=1).astype(np.float32),
         "chroma_mean": chroma.mean(axis=1).astype(np.float32),
-        "tempo": float(np.asarray(tempo).reshape(-1)[0]),
+        # "tempo": float(np.asarray(tempo).reshape(-1)[0]),
+        "tempo": float(tempo),
         "contrast_mean": contrast.mean(axis=1).astype(np.float32),
     }
 
