@@ -103,12 +103,12 @@ service, and Airflow (`standalone` — webserver + scheduler + triggerer in one 
 docker compose up -d --build
 ```
 
-| Service  | URL                     |
-|----------|-------------------------|
-| Service  | http://localhost:8000   |
-| MLflow   | http://localhost:5001   |
-| Airflow  | http://localhost:8080   |
-| Kafka    | localhost:9092          |
+| Service | URL                   |
+| ------- | --------------------- |
+| Service | http://localhost:8000 |
+| MLflow  | http://localhost:5001 |
+| Airflow | http://localhost:8080 |
+| Kafka   | localhost:9092        |
 
 Smoke test:
 
@@ -139,12 +139,12 @@ streamlit run mlops/dashboard.py
 
 Frozen in [`contracts/openapi_notes.md`](contracts/openapi_notes.md):
 
-| Method & path | Purpose |
-|---|---|
-| `POST /recommend` | `{user_id}` → `{track_id}` |
-| `POST /feedback` | `{user_id, track_id, action}` → `{status}` |
-| `GET /metrics` | running CTR, reward, regret |
-| `GET /health` | service + Kafka reachability |
+| Method & path                 | Purpose                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `POST /recommend`           | `{user_id}` → `{track_id}`                                                          |
+| `POST /feedback`            | `{user_id, track_id, action}` → `{status}`                                          |
+| `GET /metrics`              | running CTR, reward, regret                                                              |
+| `GET /health`               | service + Kafka reachability                                                             |
 | `POST /admin/reload-policy` | operational addition — forces the MLflow registry poll that drives the canary lifecycle |
 
 ## Testing
