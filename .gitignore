@@ -7,3 +7,4 @@ mlruns/
 data/*.parquet
 mlops/drift_report.html
 *.pyc
+/datasets
