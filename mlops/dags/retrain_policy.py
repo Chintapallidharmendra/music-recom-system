@@ -3,10 +3,13 @@ swap on drift"). Runs hourly. The swap is always a full-population replacement o
 one serving policy -- service/main.py's registry poller is what actually flips traffic,
 this DAG only decides Staging vs Production vs Archived in the MLflow Model Registry.
 
-FORCE_RETRAIN=true bypasses the drift check for demo purposes -- our synthetic
-interaction data is stationary (no simulated preference shift over time), so the real
-drift check will legitimately almost never fire; this lets the retrain->canary->resolve
-path still be exercised end-to-end without waiting for organic drift.
+By default our synthetic interaction data is stationary (no simulated preference shift
+over time), so the real drift check will legitimately almost never fire. Regenerate
+data/synthetic_logs.parquet with `--inject-drift` (see data/generate_synthetic_logs.py)
+to get a genuine, detectable preference shift in the most recent portion of history.
+
+FORCE_RETRAIN=true still exists as a fallback that bypasses the drift check entirely,
+for exercising the retrain->canary->resolve path without depending on drift data at all.
 """
 from __future__ import annotations
 

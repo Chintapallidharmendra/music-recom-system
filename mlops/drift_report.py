@@ -37,7 +37,8 @@ def build_windows(
 
 
 def compute_drift(reference: pd.DataFrame, current: pd.DataFrame) -> dict:
-    report = Report(metrics=[DataDriftPreset()])
+
+    report = Report(metrics=[DataDriftPreset(drift_share=0.5)])
     report.run(reference_data=reference, current_data=current)
     result = report.as_dict()["metrics"][0]["result"]
     return {

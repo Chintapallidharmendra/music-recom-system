@@ -7,7 +7,7 @@ Run once; cache the output. Re-run only if extraction logic changes.
 """
 import argparse
 import os
-
+import subprocess
 # Must be set before numpy/librosa import spin up BLAS threads, otherwise
 # multiprocessing.Pool workers oversubscribe cores against each other.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -30,6 +30,46 @@ def load_small_subset() -> pd.DataFrame:
         columns={"genre_top": "genre"}
     )
 
+def load_audio_ffmpeg(path, sr=22050):
+    command = [
+        "ffmpeg",
+        "-v", "error",
+        "-i", str(path),
+        "-f", "f32le",
+        "-acodec", "pcm_f32le",
+        "-ac", "1",
+        "-ar", str(sr),
+        "pipe:1",
+    ]
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        error = result.stderr.decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        raise RuntimeError(
+            f"FFmpeg failed: {error}"
+        )
+
+    y = np.frombuffer(
+        result.stdout,
+        dtype=np.float32,
+    )
+
+    if y.size == 0:
+        raise RuntimeError(
+            "FFmpeg returned empty audio"
+        )
+
+    return y, sr
 
 def track_audio_path(track_id: int) -> str:
     tid_str = f"{track_id:06d}"
@@ -37,16 +77,26 @@ def track_audio_path(track_id: int) -> str:
 
 
 def extract_features(path: str) -> dict:
-    y, sr = librosa.load(path, sr=22050, mono=True)
+    y, sr = load_audio_ffmpeg(path=path)
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    # tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    onset_env = librosa.onset.onset_strength(
+    y=y,
+    sr=sr
+    )
+
+    tempo = librosa.feature.tempo(
+    onset_envelope=onset_env,
+    sr=sr
+    )[0]
     contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
     return {
         "mfcc_mean": mfcc.mean(axis=1).astype(np.float32),
         "mfcc_var": mfcc.var(axis=1).astype(np.float32),
         "chroma_mean": chroma.mean(axis=1).astype(np.float32),
-        "tempo": float(np.asarray(tempo).reshape(-1)[0]),
+        # "tempo": float(np.asarray(tempo).reshape(-1)[0]),
+        "tempo": float(tempo),
         "contrast_mean": contrast.mean(axis=1).astype(np.float32),
     }
 
