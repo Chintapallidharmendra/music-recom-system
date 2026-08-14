@@ -39,6 +39,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       BANDIT_POLICY: linucb
       CANDIDATE_POOL_SIZE: "15"
+      LIVE_FEEDBACK_PATH: /mlruns/live_feedback.jsonl
     # MLflow's local-artifact-store backend has clients read/write artifacts directly
     # on disk (not proxied through the tracking server's HTTP API), so every client
     # needs the same /mlruns path mounted -- not just the mlflow server container.
@@ -64,6 +65,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       MLFLOW_TRACKING_URI: http://mlflow:5000
       FORCE_RETRAIN: "false"
+      LIVE_FEEDBACK_PATH: /mlruns/live_feedback.jsonl
       PYTHONPATH: /app
     working_dir: /app
     volumes:
