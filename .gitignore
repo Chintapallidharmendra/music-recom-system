@@ -4,7 +4,7 @@ datasets/
 __pycache__/
 mlruns/
 .pytest_cache/
-data/*.parquet
+# data/*.parquet
 mlops/drift_report.html
 *.pyc
 mlruns_backup*
