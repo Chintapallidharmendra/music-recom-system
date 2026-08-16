@@ -7,3 +7,5 @@ mlruns/
 data/*.parquet
 mlops/drift_report.html
 *.pyc
+mlruns_backup*
+live_feedback.jsonl
