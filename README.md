@@ -57,6 +57,35 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Fetching the datasets (DVC)
+
+`datasets/` is tracked with [DVC](https://dvc.org) (`datasets.dvc`) and stored in a
+shared Google Drive remote, not in git. After installing dependencies:
+
+```bash
+dvc pull
+```
+
+This uses a project-specific Google OAuth client (`gdrive_client_id`/`gdrive_client_secret`
+in `.dvc/config`), not DVC's shared default — Google's shared-client OAuth now gets hard
+blocked ("This app is blocked") on many personal Gmail accounts, and service accounts
+can't be used either since they have no storage quota outside a Workspace Shared Drive.
+The app is left in Google's "Testing" publish status, so **only allowlisted Google
+accounts can authorize it** — ask a maintainer to add your Gmail as a test user in the
+GCP project's OAuth consent screen before your first `dvc pull`.
+
+The first `dvc pull`/`dvc push` on a machine triggers a one-time interactive Google
+login: it opens a browser to a Google consent screen, shows a "Google hasn't verified
+this app" warning (expected, since it's a small Testing-mode app, not a public one),
+click **Advanced → Go to \<app name\> (unsafe)** to continue. The token is then cached
+locally and reused on future runs.
+
+Note: the login flow needs a local callback server on `localhost:8080` — if something
+else on your machine is already bound to that port (e.g. Airflow from
+[Docker Compose](#docker-compose) below), stop it first or the browser login will hang
+with no error. After modifying anything under `datasets/`, run
+`dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
+
 `requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
 MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
 `mlops/requirements.txt` are the trimmed subsets actually installed inside the Docker
@@ -107,7 +136,7 @@ docker compose up -d --build
 | ------- | --------------------- |
 | Service | http://localhost:8000 |
 | MLflow  | http://localhost:5001 |
-| Airflow | http://localhost:8080 |
+| Airflow | http://localhost:8081 |
 | Kafka   | localhost:9092        |
 
 Smoke test:
