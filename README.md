@@ -83,8 +83,19 @@ locally and reused on future runs.
 Note: the login flow needs a local callback server on `localhost:8080` — if something
 else on your machine is already bound to that port (e.g. Airflow from
 [Docker Compose](#docker-compose) below), stop it first or the browser login will hang
-with no error. After modifying anything under `datasets/`, run
-`dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
+with no error.
+
+`fma_small`'s ~8000 individual mp3s are stored as a single `fma_small.tar` (Google
+Drive's API is too slow per-file for thousands of small files) — after `dvc pull`,
+extract it before running the feature extraction pipeline:
+
+```bash
+mkdir -p datasets/archive/fma_small/fma_small
+tar -xf datasets/archive/fma_small.tar -C datasets/archive/fma_small/fma_small
+```
+
+After modifying anything under `datasets/` (re-tar `fma_small` first if you touched
+those mp3s), run `dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
 
 `requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
 MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
