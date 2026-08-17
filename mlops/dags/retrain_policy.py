@@ -50,6 +50,24 @@ def _collect(**context) -> None:
     context["ti"].xcom_push(key="live_event_count", value=len(live))
 
 
+# def _check_drift(**context) -> str:
+#     from mlops.drift_report import build_windows, compute_drift
+#     from mlops.tracking import log_drift_summary
+
+#     plays = pd.read_parquet("data/synthetic_logs.parquet")
+#     features = pd.read_parquet("data/features.parquet")
+#     live = _load_live_feedback()
+
+#     reference, current = build_windows(plays, features, live_feedback=live)
+#     summary, _ = compute_drift(reference, current)
+#     log_drift_summary(summary)
+#     context["ti"].xcom_push(key="drift_summary", value=summary)
+
+#     force = os.environ.get("FORCE_RETRAIN", "false").lower() == "true"
+#     drift = summary.get("dataset_drift", False)
+#     ready = summary.get("monitoring_ready", False)
+#     return "update_features" if (force or (ready and drift)) else "no_drift"
+
 def _check_drift(**context) -> str:
     from mlops.drift_report import build_windows, compute_drift
     from mlops.tracking import log_drift_summary
@@ -58,15 +76,90 @@ def _check_drift(**context) -> str:
     features = pd.read_parquet("data/features.parquet")
     live = _load_live_feedback()
 
-    reference, current = build_windows(plays, features, live_feedback=live)
+    reference, current = build_windows(
+        plays,
+        features,
+        live_feedback=live,
+    )
+
     summary, _ = compute_drift(reference, current)
-    log_drift_summary(summary)
-    context["ti"].xcom_push(key="drift_summary", value=summary)
+
+    # ---------------------------------------------------------
+    # Print drift information explicitly into Airflow logs
+    # ---------------------------------------------------------
+
+    print("=" * 70)
+    print("DRIFT MONITORING RESULT")
+    print("=" * 70)
+
+    print(f"Live feedback events : {len(live)}")
+    print(f"Reference rows       : {len(reference)}")
+    print(f"Current rows         : {len(current)}")
+
+    print(f"Monitoring ready     : {summary.get('monitoring_ready')}")
+    print(f"Dataset drift        : {summary.get('dataset_drift')}")
+    print(
+        f"Drifted columns      : "
+        f"{summary.get('number_of_drifted_columns')}"
+    )
+    print(
+        f"Drift share           : "
+        f"{summary.get('share_of_drifted_columns')}"
+    )
+
+    print("-" * 70)
+    print("Complete drift summary:")
+    print(json.dumps(summary, indent=2, default=str))
 
     force = os.environ.get("FORCE_RETRAIN", "false").lower() == "true"
-    drift = summary.get("dataset_drift", False)
-    ready = summary.get("monitoring_ready", False)
-    return "update_features" if (force or (ready and drift)) else "no_drift"
+
+    drift = bool(summary.get("dataset_drift", False))
+    ready = bool(summary.get("monitoring_ready", False))
+
+    print("-" * 70)
+    print(f"FORCE_RETRAIN         : {force}")
+    print(f"DRIFT DETECTED        : {drift}")
+    print(f"MONITORING READY      : {ready}")
+
+    if force:
+        decision = "update_features"
+        reason = "FORCE_RETRAIN=true"
+    elif ready and drift:
+        decision = "update_features"
+        reason = "monitoring_ready=true AND dataset_drift=true"
+    else:
+        decision = "no_drift"
+        reason = "No retraining condition satisfied"
+
+    print(f"BRANCH DECISION       : {decision}")
+    print(f"REASON                : {reason}")
+    print("=" * 70)
+
+    # Save in Airflow XCom
+    context["ti"].xcom_push(
+        key="drift_summary",
+        value=summary,
+    )
+
+    context["ti"].xcom_push(
+        key="drift_detected",
+        value=drift,
+    )
+
+    context["ti"].xcom_push(
+        key="monitoring_ready",
+        value=ready,
+    )
+
+    context["ti"].xcom_push(
+        key="drifted_columns",
+        value=summary.get("number_of_drifted_columns", 0),
+    )
+
+    # MLflow
+    log_drift_summary(summary)
+
+    return decision
 
 
 def _update_features(**context) -> None:

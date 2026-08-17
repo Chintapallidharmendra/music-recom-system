@@ -68,6 +68,26 @@ def _current_frame(live: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
     return merged[DRIFT_COLUMNS]
 
 
+# def build_windows(
+#     plays: pd.DataFrame,
+#     features: pd.DataFrame,
+#     live_feedback: pd.DataFrame | None = None,
+#     current_window: int = 2000,
+# ) -> tuple[pd.DataFrame, pd.DataFrame]:
+#     """Return a fixed historical reference and the newest live interaction window."""
+#     reference = _reference_frame(plays, features)
+
+#     if live_feedback is not None and not live_feedback.empty:
+#         live_feedback = live_feedback.sort_values("timestamp").tail(current_window)
+#         current = _current_frame(live_feedback, features)
+#         return reference, current
+
+#     # Backward-compatible standalone behavior when no live event store exists yet.
+#     merged = plays.merge(_flatten_features(features), on="track_id", how="inner")
+#     merged = merged.sort_values("timestamp")
+#     midpoint = len(merged) // 2
+#     return merged.iloc[:midpoint][DRIFT_COLUMNS], merged.iloc[midpoint:][DRIFT_COLUMNS]
+
 def build_windows(
     plays: pd.DataFrame,
     features: pd.DataFrame,
@@ -75,6 +95,7 @@ def build_windows(
     current_window: int = 2000,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return a fixed historical reference and the newest live interaction window."""
+
     reference = _reference_frame(plays, features)
 
     if live_feedback is not None and not live_feedback.empty:
@@ -82,11 +103,10 @@ def build_windows(
         current = _current_frame(live_feedback, features)
         return reference, current
 
-    # Backward-compatible standalone behavior when no live event store exists yet.
-    merged = plays.merge(_flatten_features(features), on="track_id", how="inner")
-    merged = merged.sort_values("timestamp")
-    midpoint = len(merged) // 2
-    return merged.iloc[:midpoint][DRIFT_COLUMNS], merged.iloc[midpoint:][DRIFT_COLUMNS]
+    # No live feedback available yet.
+    # Do not split the synthetic dataset because this DAG is supposed
+    # to monitor actual production feedback.
+    return reference, pd.DataFrame(columns=DRIFT_COLUMNS)
 
 
 def compute_drift(reference: pd.DataFrame, current: pd.DataFrame) -> tuple[dict, Report]:
