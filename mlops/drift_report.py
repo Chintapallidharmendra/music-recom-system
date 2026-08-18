@@ -23,6 +23,7 @@ DRIFT_COLUMNS = [
     "reward",
 ]
 MIN_CURRENT_EVENTS = 100
+RECENT_WINDOW_MINUTES = 30
 
 
 def _flatten_features(features: pd.DataFrame) -> pd.DataFrame:
@@ -93,19 +94,29 @@ def build_windows(
     features: pd.DataFrame,
     live_feedback: pd.DataFrame | None = None,
     current_window: int = 2000,
+    recent_window_minutes: int = RECENT_WINDOW_MINUTES,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return a fixed historical reference and the newest live interaction window."""
+    """Return a fixed historical reference and only the recent live interaction window.
+
+    This intentionally ignores stale events from earlier simulator runs, so the DAG does not
+    keep reporting drift after the stream has stopped.
+    """
 
     reference = _reference_frame(plays, features)
 
     if live_feedback is not None and not live_feedback.empty:
-        live_feedback = live_feedback.sort_values("timestamp").tail(current_window)
+        live_feedback = live_feedback.sort_values("timestamp").copy()
+
+        if "timestamp" in live_feedback.columns:
+            cutoff = pd.Timestamp.utcnow().tz_localize(None) - pd.Timedelta(
+                minutes=recent_window_minutes
+            )
+            live_feedback = live_feedback[live_feedback["timestamp"] >= cutoff]
+
+        live_feedback = live_feedback.tail(current_window)
         current = _current_frame(live_feedback, features)
         return reference, current
 
-    # No live feedback available yet.
-    # Do not split the synthetic dataset because this DAG is supposed
-    # to monitor actual production feedback.
     return reference, pd.DataFrame(columns=DRIFT_COLUMNS)
 
 
@@ -143,12 +154,19 @@ def main():
     parser.add_argument("--live", default="data/live_feedback.jsonl")
     parser.add_argument("--out", default="mlops/drift_report.html")
     parser.add_argument("--current-window", type=int, default=2000)
+    parser.add_argument("--recent-window-minutes", type=int, default=RECENT_WINDOW_MINUTES)
     args = parser.parse_args()
 
     plays = pd.read_parquet(args.plays)
     features = pd.read_parquet(args.features)
     live = _load_live_feedback(args.live)
-    reference, current = build_windows(plays, features, live, args.current_window)
+    reference, current = build_windows(
+        plays,
+        features,
+        live,
+        args.current_window,
+        recent_window_minutes=args.recent_window_minutes,
+    )
 
     summary, report = compute_drift(reference, current)
     print(f"reference window: {len(reference)} events, current window: {len(current)} events")

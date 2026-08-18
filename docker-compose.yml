@@ -21,6 +21,7 @@ services:
       context: .
       dockerfile: mlops/mlflow.Dockerfile
     container_name: bandit-mlflow
+    user: "${HOST_UID:-1000}:0"
     ports:
       - "5001:5000"
     volumes:
@@ -32,6 +33,7 @@ services:
       context: .
       dockerfile: service/Dockerfile
     container_name: bandit-service
+    user: "${HOST_UID:-1000}:0"
     ports:
       - "8000:8000"
     environment:
@@ -53,9 +55,10 @@ services:
       context: .
       dockerfile: mlops/Dockerfile
     container_name: bandit-airflow
+    user: "${HOST_UID:-1000}:0"
     command: standalone
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       # AIRFLOW_HOME intentionally left at the image's own default (/opt/airflow),
       # NOT inside the bind-mounted /app -- putting SQLite state (and a stale
