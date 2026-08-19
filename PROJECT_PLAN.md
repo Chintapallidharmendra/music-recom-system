@@ -1,0 +1,240 @@
+# Music-Bandit: Full Build Plan (Solo Execution)
+
+## Context
+
+Day-1 alignment is done: `contracts/{parquet_schema,kafka_topics,openapi_notes,dataset_reconciliation}.md`
+freeze the feature schema, Kafka topics, REST API, and the data-driven decision to use a
+**synthetic interaction/reward layer** instead of a real Last.fm↔FMA join (real join match rate
+measured at 0.047% of events, touching 260/8,000 tracks — too sparse to build on).
+
+This plan turns the two source documents (`Claude_Code_Execution_Spec.docx`,
+`MLOps_Workplan.docx`) — written for a 4-person parallel team — into a sequenced solo build.
+Confirmed with the user: **solo execution** (tracks run A→B→C→D, not in parallel) and
+**full infra scope** (Kafka, Docker, MLflow, Evidently, Airflow, CI/CD, canary — not descoped
+up front; the docs' descope order is a fallback only, used if time runs short, never the plan).
+
+The one design gap neither source doc resolves: since the real Last.fm join is NO-GO, Track A's
+`build_user_context.py` (needs historical plays) and Track B's `replay_evaluator.py` (needs
+ground-truth reward) both need synthetic data that doesn't exist yet. This plan adds that layer
+explicitly, owned by a shared ground-truth model so the two don't drift apart.
+
+## Synthetic-data architecture (new, resolves the join gap)
+
+One shared ground-truth model, two consumers:
+
+- **`data/synth_user_profiles.py`** (Phase 0, build first) — defines ~1,000 synthetic users,
+  each with a Dirichlet-sampled genre-affinity vector over the 8 FMA-small genres + a novelty
+  bias scalar. Writes `data/user_profiles.parquet`. This is the *only* place affinity ground
+  truth is defined.
+- **`data/generate_synthetic_logs.py`** (Track A) — samples historical `(user_id, timestamp,
+  track_id)` plays from `user_profiles.parquet` + `features.parquet`, weighted by genre
+  affinity with noise/novelty so history isn't perfectly predictable. Writes
+  `data/synthetic_logs.parquet`. This is the drop-in replacement for what would have been
+  real Last.fm-joined plays — `build_user_context.py`'s interface doesn't change.
+- **`bandit/reward_simulator.py`** (Track B) — imports the *same* `user_profiles.parquet`
+  affinity vectors (does not recompute its own), adds a content-similarity term against track
+  audio features, and exposes `sample_action(user_id, track_id) -> str` and
+  `expected_reward(user_id, track_id) -> float`. Used by `replay_evaluator.py` for offline
+  replay AND imported live by `service/main.py` / a demo load-generator, since there are no
+  real users to click `/feedback` in a solo academic build.
+
+Add **`contracts/synthetic_data.md`** at the start of Phase 0, documenting
+`user_profiles.parquet`'s schema and the reward-simulator's two function signatures — same
+role as `parquet_schema.md` plays for `features.parquet`, so later steps code against a frozen
+shape.
+
+**Watch for triviality:** if `generate_synthetic_logs.py` only samples tracks a user already
+loves, there's nothing left to explore and every bandit policy will look the same in
+`compare_policies.py`. Deliberately inject noise/off-affinity plays via the novelty bias.
+
+## Sequencing (solo — linear, not parallel)
+
+No concurrency benefit to interleaving tracks solo, so build in dependency order:
+
+1. **Phase 0 — shared foundation:** `synth_user_profiles.py` → `contracts/synthetic_data.md`.
+2. **Track A — Data & Features:** `extract_features.py` (librosa, multiprocessing over
+   `datasets/archive/fma_small/`, → `data/features.parquet` matching `parquet_schema.md`) →
+   `reconcile_datasets.py` (thin script reproducing/printing the already-frozen match-rate +
+   NO-GO finding from `dataset_reconciliation.md` — keep it, don't skip it, don't re-run the
+   full 19M-row join at runtime) → `generate_synthetic_logs.py` → `build_user_context.py`
+   (recency-weighted genre affinity, 30-day half-life, + session audio average, + cold-start
+   default) → `feature_store.py` (`get_features(track_id)` in-memory dict loader).
+3. **Track B — Bandit:** `reward_simulator.py` → policies in increasing complexity, each with
+   a unit test before the next: `random_policy.py` → `epsilon_greedy.py` → `ucb1.py` →
+   `thompson_sampling.py` (Beta priors, non-contextual) → `linear_thompson_sampling.py`
+   (**added to the spec's original 5** — Bayesian linear model over the context vector,
+   Gaussian posterior per arm, sample-then-argmax action selection; this is the natural
+   contextual counterpart to plain Thompson Sampling, and gives the offline comparison a
+   frequentist-vs-Bayesian pair of contextual policies — LinUCB vs. Linear TS — rather than
+   only one contextual method) → `linucb.py` (ridge-regularized, guard matrix inversion) →
+   `replay_evaluator.py` → `compare_policies.py` (must show the contextual policies, LinUCB
+   and Linear TS, beating Random and the non-contextual policies on cumulative regret).
+4. **Track C — Serving & Streaming:** `service/schemas.py` → `service/main.py` (`/health`
+   first, then `/recommend` wired to feature_store + build_user_context + one bandit policy,
+   then `/feedback` with the reward map from `contracts/kafka_topics.md`) →
+   `kafka_producer.py`/`kafka_consumer.py` (validate against Kafka via
+   `kafka-console-producer`/`consumer` in Docker *before* wiring the Python client) →
+   `service/demo_loadgen.py` (drives synthetic `/recommend`→`reward_simulator`→`/feedback`
+   traffic, since there are no real users) → `Dockerfile`.
+5. **Track D — MLOps:** `mlops/tracking.py` (MLflow — wire into `replay_evaluator.py` and
+   `service/main.py` first, the two things that actually produce runs worth logging) →
+   `mlops/drift_report.py` (Evidently, compare two time-windows of `synthetic_logs.parquet`) →
+   `mlops/dags/retrain_policy.py` (Airflow: collect → update_features → retrain → evaluate →
+   register, orchestrating steps already built in A/B) → `mlops/dashboard.py` (Streamlit,
+   last — pure consumer of MLflow + `/metrics`).
+
+## Phase boundaries ("Build" / "Integrate" / "Automate & polish")
+
+Keep the workplan's 3-phase framing, but as effort-phases with concrete done-criteria, not
+calendar weeks (solo wall-clock will run longer on phases 1–2 than the team estimate):
+
+- **Phase 1 done when:** each track's pieces run and pass their own tests in isolation, no
+  cross-track wiring — `features.parquet` complete for all 8,000 tracks; context vectors
+  produced for warm + cold-start users; each policy passes its interface test; `uvicorn
+  service.main:app` serves `/health`, `/recommend`, `/feedback` against an in-memory policy
+  with no Kafka/MLflow yet.
+- **Phase 2 done when:** `docker-compose up` brings up Kafka (KRaft) + MLflow + FastAPI
+  together; `/recommend` → `recommendation-events` → `/feedback` → `user-feedback` → consumer
+  calls `bandit.update()` round-trips live; MLflow logs a run per batch; the Airflow DAG
+  completes end-to-end on a manual trigger.
+- **Phase 3 done when:** the Airflow DAG runs on its own hourly schedule (not manual); canary
+  routing (`hash(user_id) % 10`, 90/10 split) serves two live policy instances simultaneously
+  and logs which policy served each request; CI runs pytest + lint on push; Evidently drift
+  report and the Streamlit dashboard render; README has a 5-minute demo walkthrough.
+
+Run the full end-to-end smoke sequence (below) at every phase boundary, not just at the end.
+
+## Policy swap on drift (canary lifecycle)
+
+This closes the loop the "canary is more than a config flag" risk raises: what actually
+happens end-to-end when `drift_report.py` sees drift, all the way to the service running a
+different policy — and specifically, **the swap is always a full-population replacement of
+the one serving policy, never a permanent per-user assignment.** The hash split
+(`hash(user_id) % 10`) only exists *during* the canary evaluation window, to decide whether a
+challenger is good enough; it is not a persistent segment. A user hashed into the 10%
+challenger bucket sees the challenger only until the canary resolves — at that point every
+user, regardless of which bucket they were in, ends up on the same single policy again
+(the promoted challenger, or back to the champion on rollback). Five stages, each owned by the
+track that already builds the piece:
+
+1. **Detect** (`mlops/drift_report.py`, Track D) — Evidently compares a reference window (the
+   context/feature distribution the current `Production`-staged policy was trained on) against
+   a recent window of live traffic. Emits a drift flag/score, logs it to MLflow as a metric on
+   a monitoring run.
+2. **Decide whether to retrain** (`mlops/dags/retrain_policy.py`, Track D) — add a
+   `check_drift` task right after `collect`, using Airflow's `BranchPythonOperator`: if drift
+   is below threshold, the DAG short-circuits (nothing changes — no split, no new policy). If
+   drift is over threshold, proceed to `update_features` → `retrain` (fit **one** fresh policy
+   instance on current `data/features.parquet` + `data/synthetic_logs.parquet` — a single
+   candidate, not one per user or per bucket) → `evaluate` (replay via
+   `bandit/replay_evaluator.py`) → `register` (push to the MLflow Model Registry tagged
+   **`Staging`** — it hasn't earned `Production` yet).
+3. **Canary rollout — temporary, population-wide split** (`service/main.py`, Track C) — a
+   background poller (interval, or a webhook the DAG's `register` task calls) loads the
+   `Staging` model in-process as `challenger` alongside the current `Production` model
+   (`champion`). For the duration of the canary window only, `hash(user_id) % 10 == 0` (10% of
+   *all* users, deterministically the same 10% for the window's length so results aren't
+   confounded by a user flipping sides mid-evaluation) is routed to `challenger`; the other 90%
+   keep seeing `champion` exactly as before. Every `recommendation-events` record carries the
+   `policy` field (frozen in `kafka_topics.md`), which is what lets `champion` vs `challenger`
+   reward be tracked separately during this window.
+4. **Evaluate the canary** (new Airflow task, `evaluate_canary`, Track D) — after a fixed dwell
+   window (e.g. N≈500 canary impressions or a fixed time delay — small/synthetic scale doesn't
+   justify full statistical-significance testing), pull each policy's logged mean reward/CTR
+   from MLflow and compare. This task is the one place the swap decision is made.
+5. **Resolve — collapse back to one policy for everyone** — if `challenger`'s mean reward beats
+   `champion`'s by more than a set margin: transition `challenger` → `Production`, old
+   `champion` → `Archived`, and on the poller's next check the service drops the split
+   entirely and routes **100% of all users** (including the 90% who were never in the canary
+   bucket) to what was `challenger`. If the challenger loses: transition it → `Archived`
+   instead, the split is torn down, and **100% of all users** (including the 10% who briefly
+   saw the challenger) simply continue on the original `champion`, unchanged. Either outcome
+   ends with exactly one active policy serving everyone — an `/admin/reload-policy` endpoint
+   should exist to force/inspect this manually during the demo, but no manual step is required
+   for the swap itself.
+
+Build order: since this depends on pieces from Track C (`main.py`'s poller) and Track D
+(drift check, canary-evaluate task, registry transitions) both existing, treat it as a small
+integration step done in Phase 2, right after Track D's `retrain_policy.py` DAG first runs
+end-to-end manually — not as part of either track's initial build-in-isolation pass.
+
+## Verification
+
+**Per-file, before moving to the next** (spec's own discipline):
+```bash
+pytest tests/test_bandit_policies.py -k random -v
+pytest tests/test_bandit_policies.py -k epsilon_greedy -v
+pytest tests/test_bandit_policies.py -k ucb1 -v
+pytest tests/test_bandit_policies.py -k "thompson and not linear" -v
+pytest tests/test_bandit_policies.py -k linear_thompson -v
+pytest tests/test_bandit_policies.py -k linucb -v
+pytest tests/test_api_contract.py -v
+```
+Each policy test asserts the shared interface directly (`select_action` returns a valid arm,
+`update` doesn't raise, LinUCB's ridge coefficients change after `update()` and never NaN).
+
+**Data-layer sanity checks:**
+```bash
+python -c "import pandas as pd; df = pd.read_parquet('data/features.parquet'); \
+  assert len(df) == 8000; print(df.shape, df.dtypes)"
+python -c "import pandas as pd; df = pd.read_parquet('data/synthetic_logs.parquet'); \
+  print(df.user_id.nunique(), 'users,', len(df), 'plays')"
+```
+
+**End-to-end smoke sequence (Phase 2/3 gate):**
+```bash
+docker-compose up -d
+curl -s localhost:8000/health
+curl -s -X POST localhost:8000/recommend -H 'content-type: application/json' -d '{"user_id":"user_000001"}'
+curl -s -X POST localhost:8000/feedback -H 'content-type: application/json' \
+  -d '{"user_id":"user_000001","track_id":"...","action":"liked"}'
+docker exec -it <kafka-container> kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic recommendation-events --from-beginning --max-messages 5
+python service/demo_loadgen.py --n 200
+airflow dags trigger retrain_policy && airflow dags list-runs -d retrain_policy
+curl -s localhost:8000/metrics
+```
+
+## Risks to plan around (not fixes to make now, but things to expect)
+
+- **librosa on 8,000 files is the single longest step** (hours if serial) — parallelize with
+  `multiprocessing.Pool`, set `OMP_NUM_THREADS=1` per worker to avoid oversubscription, confirm
+  arm64 wheels for `librosa`/`numba`/`llvmlite` before other code depends on the output. Run
+  once, cache `features.parquet`, never rerun unless extraction logic changes.
+- **Kafka KRaft first-run failures** (cluster ID / volume permissions) are common — validate
+  one topic round-trip via `kafka-console-producer`/`consumer` before wiring the Python client,
+  so Kafka failures and client-code failures aren't conflated. Pin an image tag, not `latest`.
+- **MLflow/Evidently version drift** — Evidently's report API has had breaking changes across
+  versions; pin both in a requirements file before writing `drift_report.py`, don't install
+  latest mid-project.
+- **Airflow is heavy on a 16GB machine already running Kafka+MLflow+FastAPI in Docker** — do a
+  throwaway SQLite/LocalExecutor manual-trigger test first; only stand up the full
+  docker-compose Airflow (Postgres+scheduler+webserver) stack in Phase 3.
+- **Canary logic is more than a config flag** — `service/main.py` must hold two live policy
+  instances simultaneously and reconcile which object is "current" against MLflow registry
+  stage transitions; see the dedicated "Policy swap on drift" section above for the full
+  detect→retrain→canary→evaluate→resolve lifecycle and why the split is temporary and
+  population-wide, not a permanent per-user assignment.
+- **CI/CD "auto-deploy" needs a concrete target** — default to pushing the Docker image to
+  GHCR/tag on push, not an actual remote server, unless one is specifically wanted.
+
+## Fallback order (only if solo time runs out — not the default plan)
+
+From `MLOps_Workplan.docx`, in order: (1) shrink the Airflow DAG to 3 tasks, (2) collapse Kafka
+to 1 topic, (3) ship 1 bandit policy instead of the full comparison, (4) drop the custom
+dashboard for MLflow/Airflow's built-in UIs. Kafka end-to-end, Airflow end-to-end, and the core
+recommend/feedback loop are the graded/never-drop items — cut in this order, never skip ahead.
+
+## Critical files (new, to be created)
+
+- `contracts/synthetic_data.md` — new frozen contract for the synthetic layer
+- `data/synth_user_profiles.py`, `data/generate_synthetic_logs.py`, `data/extract_features.py`,
+  `data/reconcile_datasets.py`, `data/build_user_context.py`, `data/feature_store.py`
+- `bandit/reward_simulator.py`, `bandit/policies/{random_policy,epsilon_greedy,ucb1,
+  thompson_sampling,linear_thompson_sampling,linucb}.py`, `bandit/replay_evaluator.py`,
+  `bandit/compare_policies.py`
+- `service/schemas.py`, `service/main.py`, `service/kafka_producer.py`,
+  `service/kafka_consumer.py`, `service/demo_loadgen.py`, `service/Dockerfile`
+- `mlops/tracking.py`, `mlops/drift_report.py`, `mlops/dashboard.py`, `mlops/dags/retrain_policy.py`
+- `tests/test_bandit_policies.py`, `tests/test_api_contract.py`
+- `docker-compose.yml`, `.github/workflows/ci.yml`, top-level `requirements.txt`
