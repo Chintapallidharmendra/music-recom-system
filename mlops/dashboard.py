@@ -11,7 +11,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from mlops.tracking import EXPERIMENT_NAME, init_tracking
+from tracking import EXPERIMENT_NAME, init_tracking
 
 SERVICE_URL = os.environ.get("SERVICE_URL", "http://localhost:8000")
 

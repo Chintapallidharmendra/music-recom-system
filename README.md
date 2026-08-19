@@ -57,6 +57,58 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Fetching the datasets (DVC)
+
+`datasets/` is tracked with [DVC](https://dvc.org) (`datasets.dvc`) and stored in a
+shared Google Drive remote, not in git. After installing dependencies:
+
+```bash
+dvc pull
+```
+
+This uses a project-specific Google OAuth client (`gdrive_client_id`/`gdrive_client_secret`
+in `.dvc/config`), not DVC's shared default — Google's shared-client OAuth now gets hard
+blocked ("This app is blocked") on many personal Gmail accounts, and service accounts
+can't be used either since they have no storage quota outside a Workspace Shared Drive.
+The app is left in Google's "Testing" publish status, so **only allowlisted Google
+accounts can authorize it** — ask a maintainer to add your Gmail as a test user in the
+GCP project's OAuth consent screen before your first `dvc pull`.
+
+The first `dvc pull`/`dvc push` on a machine triggers a one-time interactive Google
+login: it opens a browser to a Google consent screen, shows a "Google hasn't verified
+this app" warning (expected, since it's a small Testing-mode app, not a public one),
+click **Advanced → Go to \<app name\> (unsafe)** to continue. The token is then cached
+locally and reused on future runs.
+
+Note: the login flow needs a local callback server on `localhost:8080` — if something
+else on your machine is already bound to that port (e.g. Airflow from
+[Docker Compose](#docker-compose) below), stop it first or the browser login will hang
+with no error.
+
+Large files are split into `*.part-*` chunks (~500MB–1GB each) before being tracked —
+Google Drive's API is too slow/unreliable per-file for thousands of small files, and
+proved unreliable uploading any single multi-hundred-MB+ blob in one shot too. Affected:
+- `fma_small`'s ~8000 individual mp3s, tarred then split: `fma_small.tar.part-*`
+- `lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.part-*`
+- `fma_metadata/features.csv.part-*`
+
+After `dvc pull`, reassemble before running the pipeline:
+
+```bash
+mkdir -p datasets/archive/fma_small/fma_small
+cat datasets/archive/fma_small.tar.part-* | tar -xf - -C datasets/archive/fma_small/fma_small
+
+cat datasets/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.part-* \
+  > datasets/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv
+
+cat datasets/archive/fma_metadata/fma_metadata/features.csv.part-* \
+  > datasets/archive/fma_metadata/fma_metadata/features.csv
+```
+
+After modifying anything under `datasets/` (re-split any large file you touched first —
+see the `split -b 500m <file> <file>.part-` pattern above), run
+`dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
+
 `requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
 MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
 `mlops/requirements.txt` are the trimmed subsets actually installed inside the Docker
@@ -103,12 +155,12 @@ service, and Airflow (`standalone` — webserver + scheduler + triggerer in one 
 docker compose up -d --build
 ```
 
-| Service  | URL                     |
-|----------|-------------------------|
-| Service  | http://localhost:8000   |
-| MLflow   | http://localhost:5001   |
-| Airflow  | http://localhost:8080   |
-| Kafka    | localhost:9092          |
+| Service | URL                   |
+| ------- | --------------------- |
+| Service | http://localhost:8000 |
+| MLflow  | http://localhost:5001 |
+| Airflow | http://localhost:8081 |
+| Kafka   | localhost:9092        |
 
 Smoke test:
 
@@ -139,12 +191,12 @@ streamlit run mlops/dashboard.py
 
 Frozen in [`contracts/openapi_notes.md`](contracts/openapi_notes.md):
 
-| Method & path | Purpose |
-|---|---|
-| `POST /recommend` | `{user_id}` → `{track_id}` |
-| `POST /feedback` | `{user_id, track_id, action}` → `{status}` |
-| `GET /metrics` | running CTR, reward, regret |
-| `GET /health` | service + Kafka reachability |
+| Method & path                 | Purpose                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `POST /recommend`           | `{user_id}` → `{track_id}`                                                          |
+| `POST /feedback`            | `{user_id, track_id, action}` → `{status}`                                          |
+| `GET /metrics`              | running CTR, reward, regret                                                              |
+| `GET /health`               | service + Kafka reachability                                                             |
 | `POST /admin/reload-policy` | operational addition — forces the MLflow registry poll that drives the canary lifecycle |
 
 ## Testing
