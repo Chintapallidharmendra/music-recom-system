@@ -23,7 +23,7 @@ DRIFT_COLUMNS = [
     "reward",
 ]
 MIN_CURRENT_EVENTS = 100
-RECENT_WINDOW_MINUTES = 30
+RECENT_WINDOW_MINUTES = 3
 
 
 def _flatten_features(features: pd.DataFrame) -> pd.DataFrame:

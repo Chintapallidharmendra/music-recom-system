@@ -261,6 +261,33 @@ def feedback(req: FeedbackRequest) -> FeedbackResponse:
     return FeedbackResponse()
 
 
+@app.post("/feedback/direct", response_model=FeedbackResponse)
+def feedback_direct(req: FeedbackRequest) -> FeedbackResponse:
+    """Synchronous feedback ingestion for demos.
+
+    This endpoint bypasses Kafka and directly applies the feedback to the in-memory
+    policy (calls the same handler used by the background consumer). Use this from
+    Swagger to demonstrate: call `/recommend` -> then POST `/feedback/direct` with a
+    `skip` (or other) action -> call `/recommend` again to see the updated policy's
+    recommendation for the same user.
+    """
+    reward = REWARD_MAP[req.action]
+    timestamp = datetime.now(timezone.utc).isoformat()
+    event = {
+        "user_id": req.user_id,
+        "track_id": req.track_id,
+        "action": req.action,
+        "reward": float(reward),
+        "timestamp": timestamp,
+    }
+    try:
+        _handle_feedback(event)
+    except Exception:
+        logger.exception("direct feedback handling failed")
+        raise
+    return FeedbackResponse()
+
+
 def _current_metrics() -> dict:
     n = state.total_feedback
     return {

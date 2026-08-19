@@ -131,7 +131,7 @@ def run(host, n, seed, scenario, start_after, magnitude, interval):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="http://localhost:8000")
-    parser.add_argument("--n", type=int, default=5000)
+    parser.add_argument("--n", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--scenario",
