@@ -85,19 +85,29 @@ else on your machine is already bound to that port (e.g. Airflow from
 [Docker Compose](#docker-compose) below), stop it first or the browser login will hang
 with no error.
 
-`fma_small`'s ~8000 individual mp3s are stored as a tar split into ~1GB chunks
-(`fma_small.tar.part-*`) — Google Drive's API is too slow/unreliable per-file for
-thousands of small files, and a single 7.5GB blob proved too unreliable to upload in
-one shot. After `dvc pull`, reassemble and extract before running the feature
-extraction pipeline:
+Large files are split into `*.part-*` chunks (~500MB–1GB each) before being tracked —
+Google Drive's API is too slow/unreliable per-file for thousands of small files, and
+proved unreliable uploading any single multi-hundred-MB+ blob in one shot too. Affected:
+- `fma_small`'s ~8000 individual mp3s, tarred then split: `fma_small.tar.part-*`
+- `lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.part-*`
+- `fma_metadata/features.csv.part-*`
+
+After `dvc pull`, reassemble before running the pipeline:
 
 ```bash
 mkdir -p datasets/archive/fma_small/fma_small
 cat datasets/archive/fma_small.tar.part-* | tar -xf - -C datasets/archive/fma_small/fma_small
+
+cat datasets/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.part-* \
+  > datasets/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv
+
+cat datasets/archive/fma_metadata/fma_metadata/features.csv.part-* \
+  > datasets/archive/fma_metadata/fma_metadata/features.csv
 ```
 
-After modifying anything under `datasets/` (re-tar `fma_small` first if you touched
-those mp3s), run `dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
+After modifying anything under `datasets/` (re-split any large file you touched first —
+see the `split -b 500m <file> <file>.part-` pattern above), run
+`dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
 
 `requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
 MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
