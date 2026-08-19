@@ -4,9 +4,12 @@ see contracts/kafka_topics.md and PROJECT_PLAN.md's "swap policies with zero cod
 acceptance criterion). Kafka wiring is soft-fail: the service still serves recommendations
 if Kafka is down, and /health reports the degraded state rather than crashing.
 """
+import json
 import logging
 import os
 import threading
+from collections import defaultdict
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -51,6 +54,7 @@ POLICY_FACTORIES = {
 POLICY_NAME = os.environ.get("BANDIT_POLICY", "linucb")
 CANDIDATE_POOL_SIZE = int(os.environ.get("CANDIDATE_POOL_SIZE", "15"))
 CANARY_POLL_INTERVAL_SECONDS = float(os.environ.get("CANARY_POLL_INTERVAL_SECONDS", "30"))
+LIVE_FEEDBACK_PATH = Path(os.environ.get("LIVE_FEEDBACK_PATH", "data/live_feedback.jsonl"))
 
 
 @asynccontextmanager
@@ -67,6 +71,8 @@ class AppState:
     feature_store: FeatureStore = None
     plays: pd.DataFrame = None
     features_df: pd.DataFrame = None
+    live_history: dict = None
+    live_history_lock: threading.Lock = None
     policy = None
     policy_name: str = POLICY_NAME
     policy_version: int = None
@@ -128,10 +134,35 @@ def _registry_poll_loop() -> None:
             logger.exception("registry poll failed")
 
 
+def _append_live_feedback(event: dict) -> None:
+    """Keep recent interactions available to the next recommendation and persist a
+    JSONL event store that Airflow/Evidently can read from the shared volume."""
+    user_id = event["user_id"]
+    live_row = {
+        "user_id": user_id,
+        "timestamp": event["timestamp"],
+        "track_id": event["track_id"],
+        "action": event["action"],
+        "reward": float(event["reward"]),
+    }
+    with state.live_history_lock:
+        state.live_history[user_id].append(live_row)
+        LIVE_FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LIVE_FEEDBACK_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(live_row) + "\n")
+
+
 def _handle_feedback(event: dict) -> None:
-    context = build_user_context(event["user_id"], state.plays, state.features_df)
+    # IMPORTANT: build the update context BEFORE adding this feedback event, so the
+    # reward does not leak into the context used to train on the same interaction.
+    with state.live_history_lock:
+        live_history = {k: list(v) for k, v in state.live_history.items()}
+    context = build_user_context(
+        event["user_id"], state.plays, state.features_df, live_plays=live_history
+    )
     policy, _ = _select_serving_policy(event["user_id"])
     policy.update(event["track_id"], context, event["reward"])
+    _append_live_feedback(event)
 
     state.total_feedback += 1
     state.cumulative_reward += event["reward"]
@@ -147,6 +178,18 @@ def _handle_feedback(event: dict) -> None:
 def startup() -> None:
     state.feature_store = FeatureStore()
     state.plays = pd.read_parquet("data/synthetic_logs.parquet")
+    state.live_history = defaultdict(list)
+    state.live_history_lock = threading.Lock()
+    if LIVE_FEEDBACK_PATH.exists():
+        try:
+            with LIVE_FEEDBACK_PATH.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        event = json.loads(line)
+                        state.live_history[event["user_id"]].append(event)
+            logger.info("loaded live history from %s", LIVE_FEEDBACK_PATH)
+        except Exception:
+            logger.exception("failed to restore live history from %s", LIVE_FEEDBACK_PATH)
     state.features_df = pd.read_parquet("data/features.parquet")
     state.reward_sim = RewardSimulator()
 
@@ -195,7 +238,11 @@ def health() -> HealthResponse:
 
 @app.post("/recommend", response_model=RecommendResponse)
 def recommend(req: RecommendRequest) -> RecommendResponse:
-    context = build_user_context(req.user_id, state.plays, state.features_df)
+    with state.live_history_lock:
+        live_history = {k: list(v) for k, v in state.live_history.items()}
+    context = build_user_context(
+        req.user_id, state.plays, state.features_df, live_plays=live_history
+    )
     policy, policy_label = _select_serving_policy(req.user_id)
     track_id = policy.select_action(context, state.candidate_pool)
 
@@ -211,6 +258,33 @@ def feedback(req: FeedbackRequest) -> FeedbackResponse:
     reward = REWARD_MAP[req.action]
     timestamp = datetime.now(timezone.utc).isoformat()
     state.producer.send_user_feedback(req.user_id, req.track_id, req.action, reward, timestamp)
+    return FeedbackResponse()
+
+
+@app.post("/feedback/direct", response_model=FeedbackResponse)
+def feedback_direct(req: FeedbackRequest) -> FeedbackResponse:
+    """Synchronous feedback ingestion for demos.
+
+    This endpoint bypasses Kafka and directly applies the feedback to the in-memory
+    policy (calls the same handler used by the background consumer). Use this from
+    Swagger to demonstrate: call `/recommend` -> then POST `/feedback/direct` with a
+    `skip` (or other) action -> call `/recommend` again to see the updated policy's
+    recommendation for the same user.
+    """
+    reward = REWARD_MAP[req.action]
+    timestamp = datetime.now(timezone.utc).isoformat()
+    event = {
+        "user_id": req.user_id,
+        "track_id": req.track_id,
+        "action": req.action,
+        "reward": float(reward),
+        "timestamp": timestamp,
+    }
+    try:
+        _handle_feedback(event)
+    except Exception:
+        logger.exception("direct feedback handling failed")
+        raise
     return FeedbackResponse()
 
 

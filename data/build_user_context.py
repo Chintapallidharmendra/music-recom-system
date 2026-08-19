@@ -41,12 +41,32 @@ def build_user_context(
     features: pd.DataFrame,
     half_life_days: float = HALF_LIFE_DAYS,
     session_n: int = SESSION_N,
+    live_plays: dict | pd.DataFrame | None = None,
 ) -> np.ndarray:
     """Recency-weighted genre affinity + session audio average. Never raises on an
     unknown/cold-start user_id -- returns default_context() instead."""
-    user_plays = plays[plays["user_id"] == user_id]
+    # Start from immutable historical data, then overlay interactions produced by the
+    # live simulator. This keeps the original dataset unchanged while allowing the
+    # next recommendation to reflect recent behavior.
+    user_plays = plays[plays["user_id"] == user_id].copy()
+
+    if isinstance(live_plays, dict):
+        rows = live_plays.get(user_id, [])
+        if rows:
+            live_df = pd.DataFrame(rows)
+            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(None)
+            live_df = live_df[["user_id", "timestamp", "track_id"]]
+            user_plays = pd.concat([user_plays, live_df], ignore_index=True)
+    elif isinstance(live_plays, pd.DataFrame) and not live_plays.empty:
+        live_df = live_plays[live_plays["user_id"] == user_id].copy()
+        if not live_df.empty:
+            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(None)
+            user_plays = pd.concat([user_plays, live_df[["user_id", "timestamp", "track_id"]]], ignore_index=True)
+
     if user_plays.empty:
         return default_context()
+
+    user_plays["timestamp"] = pd.to_datetime(user_plays["timestamp"], utc=True).dt.tz_localize(None)
 
     features_by_id = features.set_index("track_id")
     genre_by_track = features_by_id["genre"]
