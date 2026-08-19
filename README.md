@@ -85,13 +85,15 @@ else on your machine is already bound to that port (e.g. Airflow from
 [Docker Compose](#docker-compose) below), stop it first or the browser login will hang
 with no error.
 
-`fma_small`'s ~8000 individual mp3s are stored as a single `fma_small.tar` (Google
-Drive's API is too slow per-file for thousands of small files) — after `dvc pull`,
-extract it before running the feature extraction pipeline:
+`fma_small`'s ~8000 individual mp3s are stored as a tar split into ~1GB chunks
+(`fma_small.tar.part-*`) — Google Drive's API is too slow/unreliable per-file for
+thousands of small files, and a single 7.5GB blob proved too unreliable to upload in
+one shot. After `dvc pull`, reassemble and extract before running the feature
+extraction pipeline:
 
 ```bash
 mkdir -p datasets/archive/fma_small/fma_small
-tar -xf datasets/archive/fma_small.tar -C datasets/archive/fma_small/fma_small
+cat datasets/archive/fma_small.tar.part-* | tar -xf - -C datasets/archive/fma_small/fma_small
 ```
 
 After modifying anything under `datasets/` (re-tar `fma_small` first if you touched
