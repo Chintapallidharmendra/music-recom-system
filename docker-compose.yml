@@ -54,7 +54,7 @@ services:
     container_name: bandit-airflow
     command: standalone
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       # AIRFLOW_HOME intentionally left at the image's own default (/opt/airflow),
       # NOT inside the bind-mounted /app -- putting SQLite state (and a stale
