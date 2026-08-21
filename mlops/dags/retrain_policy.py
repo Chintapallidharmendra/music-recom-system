@@ -219,8 +219,15 @@ def _evaluate_policy(policy, users, candidate_pool, plays, features) -> dict:
     }
 
 
-def _retrain(**context) -> None:
-    from bandit.policies.linucb import LinUCBPolicy
+def _retrain_policy(policy_name: str, **context) -> None:
+    if policy_name == "LinUCB":
+        from bandit.policies.linucb import LinUCBPolicy
+        policy = LinUCBPolicy(alpha=1.0, context_dim=8)
+    elif policy_name == "LinTS":
+        from bandit.policies.linear_thompson_sampling import LinearThompsonSamplingPolicy
+        policy = LinearThompsonSamplingPolicy(v=0.3, seed=42, context_dim=8)
+    else:
+        raise ValueError(f"unsupported drift retrain policy: {policy_name}")
 
     live = _load_live_feedback()
     if len(live) < MIN_LIVE_EVENTS:
@@ -229,7 +236,6 @@ def _retrain(**context) -> None:
     plays = pd.read_parquet("data/synthetic_logs.parquet")
     features = pd.read_parquet("data/features.parquet")
 
-    policy = LinUCBPolicy(alpha=1.0, context_dim=8)
     updates = _train_from_live_feedback(policy, live, plays, features)
 
     rng = np.random.default_rng(42)
@@ -243,16 +249,37 @@ def _retrain(**context) -> None:
     metrics["training_events"] = updates
 
     os.makedirs(CANDIDATE_ARTIFACT_DIR, exist_ok=True)
-    path = os.path.join(CANDIDATE_ARTIFACT_DIR, f"candidate_{context['run_id']}.pkl")
+    path = os.path.join(CANDIDATE_ARTIFACT_DIR, f"candidate_{policy_name}_{context['run_id']}.pkl")
     with open(path, "wb") as f:
         pickle.dump(policy, f)
 
     context["ti"].xcom_push(key="candidate_metrics", value=metrics)
     context["ti"].xcom_push(key="candidate_path", value=path)
+    context["ti"].xcom_push(key="candidate_policy_name", value=policy_name)
+
+
+def _select_best_candidate(**context) -> None:
+    linucb_metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="retrain_linucb")
+    lints_metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="retrain_lints")
+    linucb_path = context["ti"].xcom_pull(key="candidate_path", task_ids="retrain_linucb")
+    lints_path = context["ti"].xcom_pull(key="candidate_path", task_ids="retrain_lints")
+
+    if linucb_metrics["avg_reward"] >= lints_metrics["avg_reward"]:
+        selected_policy = "LinUCB"
+        selected_metrics = linucb_metrics
+        selected_path = linucb_path
+    else:
+        selected_policy = "LinTS"
+        selected_metrics = lints_metrics
+        selected_path = lints_path
+
+    context["ti"].xcom_push(key="candidate_metrics", value=selected_metrics)
+    context["ti"].xcom_push(key="candidate_path", value=selected_path)
+    context["ti"].xcom_push(key="candidate_policy_name", value=selected_policy)
 
 
 def _evaluate(**context) -> None:
-    metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="retrain")
+    metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="select_best_candidate")
     if metrics["avg_reward"] < -1.0:
         raise ValueError(f"candidate policy failed sanity check: {metrics}")
 
@@ -260,9 +287,10 @@ def _evaluate(**context) -> None:
 def _register(**context) -> None:
     from mlops.tracking import register_policy
 
-    path = context["ti"].xcom_pull(key="candidate_path", task_ids="retrain")
-    metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="retrain")
-    version = register_policy(path, metrics, MODEL_NAME)
+    path = context["ti"].xcom_pull(key="candidate_path", task_ids="select_best_candidate")
+    metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="select_best_candidate")
+    policy_name = context["ti"].xcom_pull(key="candidate_policy_name", task_ids="select_best_candidate")
+    version = register_policy(path, metrics, MODEL_NAME, policy_name=policy_name)
     context["ti"].xcom_push(key="candidate_version", value=version)
 
 
@@ -308,7 +336,17 @@ with DAG(
     check_drift = BranchPythonOperator(task_id="check_drift", python_callable=_check_drift)
     no_drift = EmptyOperator(task_id="no_drift")
     update_features = PythonOperator(task_id="update_features", python_callable=_update_features)
-    retrain = PythonOperator(task_id="retrain", python_callable=_retrain)
+    retrain_linucb = PythonOperator(
+        task_id="retrain_linucb",
+        python_callable=_retrain_policy,
+        op_kwargs={"policy_name": "LinUCB"},
+    )
+    retrain_lints = PythonOperator(
+        task_id="retrain_lints",
+        python_callable=_retrain_policy,
+        op_kwargs={"policy_name": "LinTS"},
+    )
+    select_best_candidate = PythonOperator(task_id="select_best_candidate", python_callable=_select_best_candidate)
     evaluate = PythonOperator(task_id="evaluate", python_callable=_evaluate)
     register = PythonOperator(task_id="register", python_callable=_register)
     evaluate_canary = BranchPythonOperator(task_id="evaluate_canary", python_callable=_evaluate_canary)
@@ -316,4 +354,4 @@ with DAG(
     rollback = PythonOperator(task_id="rollback", python_callable=_rollback)
 
     collect >> check_drift >> [update_features, no_drift]
-    update_features >> retrain >> evaluate >> register >> evaluate_canary >> [promote, rollback]
+    update_features >> [retrain_linucb, retrain_lints] >> select_best_candidate >> evaluate >> register >> evaluate_canary >> [promote, rollback]

@@ -50,6 +50,19 @@ services:
     depends_on: [kafka, mlflow]
     networks: [bandit-net]
 
+  postgres:
+    image: postgres:15
+    container_name: bandit-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks: [bandit-net]
+
   airflow:
     build:
       context: .
@@ -70,11 +83,14 @@ services:
       FORCE_RETRAIN: "false"
       LIVE_FEEDBACK_PATH: /mlruns/live_feedback.jsonl
       PYTHONPATH: /app
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 16
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     working_dir: /app
     volumes:
       - .:/app
       - ./mlruns:/mlruns
-    depends_on: [mlflow]
+    depends_on: [mlflow, postgres]
     networks: [bandit-net]
 
 networks:
