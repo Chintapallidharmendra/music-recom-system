@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r service/requirements.txt
 COPY data/ ./data/
 COPY bandit/ ./bandit/
 COPY mlops/ ./mlops/
+COPY monitoring/ ./monitoring/
 COPY service/ ./service/
 
 ENV BANDIT_POLICY=linucb

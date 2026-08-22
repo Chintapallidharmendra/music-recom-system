@@ -3,6 +3,7 @@
 Loads the whole parquet into an in-memory dict at startup so get_features() is a plain
 dict lookup (<5ms warm, no disk I/O per call) -- this is what service/main.py imports.
 """
+import logging
 import time
 
 import numpy as np
@@ -10,10 +11,26 @@ import pandas as pd
 
 from data.build_user_context import _audio_vector
 
+try:
+    # Optional: standalone scripts that only import this module for a quick check
+    # (see __main__ below) still work even if prometheus_client isn't installed.
+    from monitoring.metrics import track_parquet_load
+except ImportError:  # pragma: no cover
+    from contextlib import contextmanager
+
+    @contextmanager
+    def track_parquet_load(_file_label: str):
+        yield lambda _rows: None
+
+
+logger = logging.getLogger(__name__)
+
 
 class FeatureStore:
     def __init__(self, path: str = "data/features.parquet"):
-        df = pd.read_parquet(path)
+        with track_parquet_load(path.rsplit("/", 1)[-1]) as record_rows:
+            df = pd.read_parquet(path)
+            record_rows(len(df))
         self._features = {
             row["track_id"]: _audio_vector(row).astype(np.float32)
             for _, row in df.iterrows()
@@ -21,6 +38,10 @@ class FeatureStore:
         self._genres = dict(zip(df["track_id"], df["genre"]))
         self.n_features = len(next(iter(self._features.values())))
         self.track_ids = list(self._features.keys())
+        logger.info(
+            "FeatureStore loaded track_count=%d feature_dim=%d source=%s",
+            len(self._features), self.n_features, path,
+        )
 
     def get_features(self, track_id: str) -> np.ndarray:
         return self._features[track_id]
