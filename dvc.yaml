@@ -1,0 +1,45 @@
+stages:
+  generate_user_profiles:
+    cmd: >-
+      python data/synth_user_profiles.py
+      --n-users ${user_profiles.n_users}
+      --seed ${user_profiles.seed}
+      --out data/user_profiles.parquet
+    deps:
+      - data/synth_user_profiles.py
+    params:
+      - user_profiles.n_users
+      - user_profiles.seed
+    outs:
+      - data/user_profiles.parquet:
+          cache: false
+
+  extract_features:
+    cmd: python data/extract_features.py --out data/features.parquet
+    deps:
+      - data/extract_features.py
+      - datasets/archive/fma_metadata/fma_metadata/tracks.csv
+      - datasets/archive/fma_small/fma_small
+    outs:
+      - data/features.parquet:
+          cache: false
+
+  generate_synthetic_logs:
+    cmd: >-
+      python -m data.generate_synthetic_logs
+      --profiles data/user_profiles.parquet
+      --features data/features.parquet
+      --history-days ${synthetic_logs.history_days}
+      --seed ${synthetic_logs.seed}
+      --out data/synthetic_logs.parquet
+    deps:
+      - data/generate_synthetic_logs.py
+      - data/synth_user_profiles.py
+      - data/user_profiles.parquet
+      - data/features.parquet
+    params:
+      - synthetic_logs.history_days
+      - synthetic_logs.seed
+    outs:
+      - data/synthetic_logs.parquet:
+          cache: false

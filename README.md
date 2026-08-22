@@ -54,7 +54,7 @@ Requires Python 3.10, Docker, and the datasets under `datasets/` (FMA-small +
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### Fetching the datasets (DVC)
@@ -88,6 +88,7 @@ with no error.
 Large files are split into `*.part-*` chunks (~500MB–1GB each) before being tracked —
 Google Drive's API is too slow/unreliable per-file for thousands of small files, and
 proved unreliable uploading any single multi-hundred-MB+ blob in one shot too. Affected:
+
 - `fma_small`'s ~8000 individual mp3s, tarred then split: `fma_small.tar.part-*`
 - `lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv.part-*`
 - `fma_metadata/features.csv.part-*`
@@ -109,10 +110,12 @@ After modifying anything under `datasets/` (re-split any large file you touched 
 see the `split -b 500m <file> <file>.part-` pattern above), run
 `dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
 
-`requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
-MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
-`mlops/requirements.txt` are the trimmed subsets actually installed inside the Docker
-images (see [Docker Compose](#docker-compose) below).
+`requirements-prod.txt` covers the runtime libraries the app actually needs (librosa,
+bandits, FastAPI, MLflow, Evidently, Streamlit, Airflow). `requirements-dev.txt` layers
+local-only tooling on top (`dvc[gdrive]`, `pytest`, `ruff`) via `-r requirements-prod.txt`,
+so `pip install -r requirements-dev.txt` above gets you everything. `service/requirements.txt`
+and `mlops/requirements.txt` are separate, further-trimmed subsets actually installed inside
+the Docker images (see [Docker Compose](#docker-compose) below).
 
 ## Running the pipeline locally
 
@@ -126,6 +129,41 @@ python -m data.generate_synthetic_logs             # data/synthetic_logs.parquet
 python -m data.build_user_context                  # smoke test: warm + cold-start context
 python -m data.feature_store                       # smoke test: get_features() latency
 ```
+
+### Reproducing with DVC
+
+The commands above that write `data/user_profiles.parquet`, `data/features.parquet`,
+and `data/synthetic_logs.parquet` are also wired up as a [DVC](https://dvc.org)
+pipeline (`dvc.yaml` / `params.yaml`), so you don't have to remember the order or
+which ones are already up to date:
+
+```bash
+dvc dag        # show the stage graph
+dvc repro      # (re)generate any of the three parquet files whose deps changed
+```
+
+`dvc repro` skips a stage if its script(s), params, and input files/dirs haven't
+changed since the last run — most useful for `extract_features`, the expensive one
+(~8000 ffmpeg+librosa extractions). The three outputs stay committed to git as
+regular files (`cache: false` in `dvc.yaml`), so no `dvc push`/`dvc pull` is needed
+for them — only `datasets.dvc` uses the DVC cache/remote.
+
+The `extract_features` stage needs the `fma_small` audio reassembled locally first.
+So on a fresh clone, the full path from zero to reproduced artifacts is: `dvc pull`,
+then the `fma_small` reassembly command from
+[Fetching the datasets](#fetching-the-datasets-dvc) above, then `dvc repro` — the
+`lastfm`/`features.csv` reassembly from that section isn't needed here, only for
+`reconcile_datasets.py`.
+
+`ffmpeg` must also be installed and on your `PATH` (`brew install ffmpeg` on macOS) —
+`extract_features.py` shells out to it per track and fails silently (writes an empty
+`features.parquet` and exits 0) if it's missing, so `dvc repro` won't know to
+re-run that stage once you do install it; force it with `dvc repro -f extract_features`
+in that case.
+
+Use the manual commands above instead of `dvc repro` for one-off runs with
+non-default flags (e.g. `--inject-drift`), or for `reconcile_datasets.py` /
+`build_user_context.py` / `feature_store.py`, which aren't part of the DVC pipeline.
 
 Compare the bandit policies offline (replay evaluation against a fixed candidate pool):
 
@@ -210,8 +248,10 @@ ruff check .           # lint
 runs on every push. `tests/test_api_contract.py` needs the generated parquet artifacts
 from the pipeline above, so it's run locally rather than in CI.
 
+## Add User to aiflow
+- To create a new admin user on airflow, run the following command in airflow docker bash shell:
 
-# Postgres add airflow user
+```bash
 airflow users create \
   --username newadmin \
   --firstname Admin \
@@ -219,3 +259,4 @@ airflow users create \
   --role Admin \
   --email admin1@example.com \
   --password 'admin'
+```

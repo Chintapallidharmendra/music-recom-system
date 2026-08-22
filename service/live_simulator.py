@@ -12,6 +12,7 @@ import pandas as pd
 
 from bandit.reward_simulator import RewardSimulator
 
+
 class LiveUserBehaviorSimulator:
     def __init__(self, scenario="normal", start_after=500, magnitude=0.6, seed=0):
         self.scenario = scenario

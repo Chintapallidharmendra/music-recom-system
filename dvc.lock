@@ -1,0 +1,74 @@
+schema: '2.0'
+stages:
+  generate_user_profiles:
+    cmd: python data/synth_user_profiles.py --n-users 1000 --seed 42 --out 
+      data/user_profiles.parquet
+    deps:
+    - path: data/synth_user_profiles.py
+      hash: md5
+      md5: eff23fb591c7b96d11ee0b05a08a779f
+      size: 1665
+      isexec: true
+    params:
+      params.yaml:
+        user_profiles.n_users: 1000
+        user_profiles.seed: 42
+    outs:
+    - path: data/user_profiles.parquet
+      hash: md5
+      md5: 8f32195d48ba73276994ab6084255531
+      size: 59276
+  extract_features:
+    cmd: python data/extract_features.py --out data/features.parquet
+    deps:
+    - path: data/extract_features.py
+      hash: md5
+      md5: 93188bcc5b996900573f854f7c369325
+      size: 4226
+      isexec: true
+    - path: datasets/archive/fma_metadata/fma_metadata/tracks.csv
+      hash: md5
+      md5: 9df94046edf8d3b9065b10b9df33caee
+      size: 260414445
+    - path: datasets/archive/fma_small/fma_small
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    outs:
+    - path: data/features.parquet
+      hash: md5
+      md5: 92e6eb133eb71a66caf7b6446c3699c5
+      size: 2984804
+  generate_synthetic_logs:
+    cmd: python -m data.generate_synthetic_logs --profiles 
+      data/user_profiles.parquet --features data/features.parquet --history-days
+      90 --seed 42 --out data/synthetic_logs.parquet
+    deps:
+    - path: data/features.parquet
+      hash: md5
+      md5: 92e6eb133eb71a66caf7b6446c3699c5
+      size: 2984804
+    - path: data/generate_synthetic_logs.py
+      hash: md5
+      md5: 77ea5b6eea737b84d530ae9825cb0334
+      size: 6601
+      isexec: true
+    - path: data/synth_user_profiles.py
+      hash: md5
+      md5: eff23fb591c7b96d11ee0b05a08a779f
+      size: 1665
+      isexec: true
+    - path: data/user_profiles.parquet
+      hash: md5
+      md5: 8f32195d48ba73276994ab6084255531
+      size: 59276
+    params:
+      params.yaml:
+        synthetic_logs.history_days: 90
+        synthetic_logs.seed: 42
+    outs:
+    - path: data/synthetic_logs.parquet
+      hash: md5
+      md5: 8eff045541dc4e91961fbc4cc071de9b
+      size: 1932479
