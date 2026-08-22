@@ -34,6 +34,12 @@ jobs:
       - name: Dependency audit (pip-audit)
         run: pip-audit -r requirements.txt
 
+      - name: Install DVC
+        run: pip install dvc==3.67.1
+
+      - name: DVC status check
+        run: dvc status
+
       - name: Unit + Contract tests (pytest)
         run: pytest tests/ -v
 
