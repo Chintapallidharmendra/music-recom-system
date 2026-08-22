@@ -4,7 +4,7 @@ Unlike the original DAG, this version never creates a fresh synthetic replay log
 retraining. It learns from the feedback events produced by the running service.
 """
 from __future__ import annotations
-
+import hashlib
 import json
 
 import os
@@ -82,6 +82,7 @@ def _check_drift(**context) -> str:
         plays,
         features,
         live_feedback=live,
+        scenario="normal",
     )
 
     summary, _ = compute_drift(reference, current)
@@ -199,6 +200,18 @@ def _train_from_live_feedback(policy, live, plays, features) -> int:
 
     return updates
 
+def _evaluation_seed(live_feedback: pd.DataFrame) -> int:
+    """Derive the evaluation seed from the live-feedback payload so changed data
+    yields a different evaluation sample instead of a fixed 42 every run."""
+    if live_feedback.empty:
+        return 42
+
+    payload = live_feedback[["user_id", "timestamp", "track_id", "reward"]].copy()
+    payload["timestamp"] = payload["timestamp"].astype(str)
+    payload["reward"] = payload["reward"].astype(str)
+    signature = payload.to_csv(index=False, header=False)
+    digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % (2**31 - 1)
 
 def _evaluate_policy(policy, users, candidate_pool, plays, features) -> dict:
     from bandit.reward_simulator import RewardSimulator
@@ -227,7 +240,7 @@ def _retrain_policy(policy_name: str, **context) -> None:
         policy = LinUCBPolicy(alpha=1.0, context_dim=8)
     elif policy_name == "LinTS":
         from bandit.policies.linear_thompson_sampling import LinearThompsonSamplingPolicy
-        policy = LinearThompsonSamplingPolicy(v=0.3, seed=42, context_dim=8)
+        policy = LinearThompsonSamplingPolicy(v=0.3, seed=0, context_dim=8)
     else:
         raise ValueError(f"unsupported drift retrain policy: {policy_name}")
 
@@ -245,7 +258,11 @@ def _retrain_policy(policy_name: str, **context) -> None:
 
     updates = _train_from_live_feedback(policy, live, plays, features)
 
-    rng = np.random.default_rng(42)
+    seed = _evaluation_seed(live)
+    # rng = np.random.default_rng(42)
+    print(f"Evaluation seed for {policy_name}: {seed}")
+    rng = np.random.default_rng(seed)
+    
     users = pd.read_parquet("data/user_profiles.parquet")["user_id"].to_numpy()
     users = rng.choice(users, size=min(EVAL_USERS, len(users)), replace=False)
     candidate_pool = list(
@@ -272,6 +289,9 @@ def _select_best_candidate(**context) -> None:
     linucb_path = context["ti"].xcom_pull(key="candidate_path", task_ids="retrain_linucb")
     lints_path = context["ti"].xcom_pull(key="candidate_path", task_ids="retrain_lints")
 
+    print("LinUCB metrics:", linucb_metrics)
+    print("LinTS metrics:", lints_metrics)
+
     if linucb_metrics["avg_reward"] >= lints_metrics["avg_reward"]:
         selected_policy = "LinUCB"
         selected_metrics = linucb_metrics
@@ -280,6 +300,9 @@ def _select_best_candidate(**context) -> None:
         selected_policy = "LinTS"
         selected_metrics = lints_metrics
         selected_path = lints_path
+
+    print(f"Selected policy: {selected_policy}")
+    print(f"Selected avg_reward: {selected_metrics['avg_reward']}")
 
     context["ti"].xcom_push(key="candidate_metrics", value=selected_metrics)
     context["ti"].xcom_push(key="candidate_path", value=selected_path)

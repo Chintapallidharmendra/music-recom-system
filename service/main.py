@@ -54,7 +54,7 @@ POLICY_FACTORIES = {
 POLICY_NAME = os.environ.get("BANDIT_POLICY", "linucb")
 CANDIDATE_POOL_SIZE = int(os.environ.get("CANDIDATE_POOL_SIZE", "15"))
 CANARY_POLL_INTERVAL_SECONDS = float(os.environ.get("CANARY_POLL_INTERVAL_SECONDS", "30"))
-LIVE_FEEDBACK_PATH = Path(os.environ.get("LIVE_FEEDBACK_PATH", "data/live_feedback.jsonl"))
+LIVE_FEEDBACK_PATH = Path(os.environ.get("LIVE_FEEDBACK_PATH", "/mlruns/live_feedback.jsonl"))
 
 
 @asynccontextmanager
