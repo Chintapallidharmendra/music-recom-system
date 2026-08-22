@@ -1,0 +1,6 @@
+-r requirements-prod.txt
+
+dvc[gdrive]==3.67.1
+pytest==8.2.2
+ruff==0.5.0
+graphifyy==0.9.48

@@ -54,7 +54,7 @@ Requires Python 3.10, Docker, and the datasets under `datasets/` (FMA-small +
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### Fetching the datasets (DVC)
@@ -109,10 +109,12 @@ After modifying anything under `datasets/` (re-split any large file you touched 
 see the `split -b 500m <file> <file>.part-` pattern above), run
 `dvc add datasets && dvc push` and commit the updated `datasets.dvc`.
 
-`requirements.txt` covers the full local dev environment (librosa, bandits, FastAPI,
-MLflow, Evidently, Streamlit, Airflow). `service/requirements.txt` and
-`mlops/requirements.txt` are the trimmed subsets actually installed inside the Docker
-images (see [Docker Compose](#docker-compose) below).
+`requirements-prod.txt` covers the runtime libraries the app actually needs (librosa,
+bandits, FastAPI, MLflow, Evidently, Streamlit, Airflow). `requirements-dev.txt` layers
+local-only tooling on top (`dvc[gdrive]`, `pytest`, `ruff`) via `-r requirements-prod.txt`,
+so `pip install -r requirements-dev.txt` above gets you everything. `service/requirements.txt`
+and `mlops/requirements.txt` are separate, further-trimmed subsets actually installed inside
+the Docker images (see [Docker Compose](#docker-compose) below).
 
 ## Running the pipeline locally
 
