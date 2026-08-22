@@ -1,0 +1,7 @@
+user_profiles:
+  n_users: 1000
+  seed: 42
+
+synthetic_logs:
+  history_days: 90
+  seed: 42

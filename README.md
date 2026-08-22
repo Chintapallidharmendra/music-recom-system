@@ -129,6 +129,30 @@ python -m data.build_user_context                  # smoke test: warm + cold-sta
 python -m data.feature_store                       # smoke test: get_features() latency
 ```
 
+### Reproducing with DVC
+
+The commands above that write `data/user_profiles.parquet`, `data/features.parquet`,
+and `data/synthetic_logs.parquet` are also wired up as a [DVC](https://dvc.org)
+pipeline (`dvc.yaml` / `params.yaml`), so you don't have to remember the order or
+which ones are already up to date:
+
+```bash
+dvc dag        # show the stage graph
+dvc repro      # (re)generate any of the three parquet files whose deps changed
+```
+
+`dvc repro` skips a stage if its script(s), params, and input files/dirs haven't
+changed since the last run — most useful for `extract_features`, the expensive one
+(~8000 ffmpeg+librosa extractions). It requires `datasets/` to already be reassembled
+locally (see [Fetching the datasets](#fetching-the-datasets-dvc) above) before the
+`extract_features` stage can run. The three outputs stay committed to git as regular
+files (`cache: false` in `dvc.yaml`), so no `dvc push`/`dvc pull` is needed for
+them — only `datasets.dvc` uses the DVC cache/remote.
+
+Use the manual commands above instead of `dvc repro` for one-off runs with
+non-default flags (e.g. `--inject-drift`), or for `reconcile_datasets.py` /
+`build_user_context.py` / `feature_store.py`, which aren't part of the DVC pipeline.
+
 Compare the bandit policies offline (replay evaluation against a fixed candidate pool):
 
 ```bash

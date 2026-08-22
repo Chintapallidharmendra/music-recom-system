@@ -3,3 +3,13 @@
 # https://dvc.org/doc/user-guide/dvcignore
 
 **/.DS_Store
+
+# Locally-reassembled files from the split *.part-* chunks (see README's
+# "Fetching the datasets" section). Ignored so `dvc add datasets` never
+# re-hashes/pushes them as new content alongside the chunks that already
+# represent them in the gdrive remote. dvc.yaml stages that explicitly
+# depend on these paths (e.g. extract_features) still track them fine --
+# an explicit deps: entry isn't subject to .dvcignore during discovery.
+datasets/archive/fma_small/fma_small/
+datasets/archive/fma_metadata/fma_metadata/features.csv
+datasets/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv
