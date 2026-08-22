@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # The FastAPI service exposes live request/business metrics directly.
+  - job_name: "music-bandit-service"
+    static_configs:
+      - targets: ["service:8000"]
+    metrics_path: /metrics/prometheus
+
+  # Prometheus itself.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Batch jobs (mlops/drift_report.py, the Airflow drift-check task,
+  # mlops/drift_stream_monitor.py) push here since they exit before a scrape could
+  # ever reach them -- Prometheus then scrapes the gateway like any other target.
+  - job_name: "pushgateway"
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]

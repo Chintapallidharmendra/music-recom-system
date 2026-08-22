@@ -21,6 +21,7 @@ services:
       context: .
       dockerfile: mlops/mlflow.Dockerfile
     container_name: bandit-mlflow
+    user: "${HOST_UID:-1000}:0"
     ports:
       - "5001:5000"
     volumes:
@@ -32,6 +33,7 @@ services:
       context: .
       dockerfile: service/Dockerfile
     container_name: bandit-service
+    user: "${HOST_UID:-1000}:0"
     ports:
       - "8000:8000"
     environment:
@@ -39,6 +41,11 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       BANDIT_POLICY: linucb
       CANDIDATE_POOL_SIZE: "15"
+      LIVE_FEEDBACK_PATH: /mlruns/live_feedback.jsonl
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      LOG_DIR: /mlruns/logs
+      PROMETHEUS_PUSHGATEWAY_URL: pushgateway:9091
     # MLflow's local-artifact-store backend has clients read/write artifacts directly
     # on disk (not proxied through the tracking server's HTTP API), so every client
     # needs the same /mlruns path mounted -- not just the mlflow server container.
@@ -52,9 +59,10 @@ services:
       context: .
       dockerfile: mlops/Dockerfile
     container_name: bandit-airflow
+    user: "${HOST_UID:-1000}:0"
     command: standalone
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       # AIRFLOW_HOME intentionally left at the image's own default (/opt/airflow),
       # NOT inside the bind-mounted /app -- putting SQLite state (and a stale
@@ -64,14 +72,43 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       MLFLOW_TRACKING_URI: http://mlflow:5000
       FORCE_RETRAIN: "false"
+      LIVE_FEEDBACK_PATH: /mlruns/live_feedback.jsonl
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      LOG_DIR: /mlruns/logs
+      PROMETHEUS_PUSHGATEWAY_URL: pushgateway:9091
       PYTHONPATH: /app
     working_dir: /app
     volumes:
       - .:/app
       - ./mlruns:/mlruns
-    depends_on: [mlflow]
+    depends_on: [mlflow, pushgateway]
+    networks: [bandit-net]
+
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    container_name: bandit-pushgateway
+    ports:
+      - "9091:9091"
+    networks: [bandit-net]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: bandit-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    depends_on: [service, pushgateway]
     networks: [bandit-net]
 
 networks:
   bandit-net:
     driver: bridge
+
+volumes:
+  prometheus-data:

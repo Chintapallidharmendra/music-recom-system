@@ -5,4 +5,5 @@ pyarrow==15.0.2
 mlflow==2.14.1
 protobuf<5,>=3.12.0
 evidently==0.4.33
+prometheus-client==0.20.0
 nltk==3.8.1
