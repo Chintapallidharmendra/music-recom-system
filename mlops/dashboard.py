@@ -3,6 +3,7 @@ MLflow's tracked runs -- built last since nothing downstream depends on it.
 
 Run with: streamlit run mlops/dashboard.py
 """
+
 import os
 
 import httpx
@@ -59,12 +60,21 @@ if replay_runs.empty:
 else:
     latest_run_time = replay_runs["start_time"].max()
     latest = replay_runs[replay_runs["start_time"] == latest_run_time]
-    table = latest[[
-        "tags.policy", "metrics.ctr", "metrics.avg_reward", "metrics.cumulative_regret",
-    ]].rename(columns={
-        "tags.policy": "policy", "metrics.ctr": "ctr",
-        "metrics.avg_reward": "avg_reward", "metrics.cumulative_regret": "cumulative_regret",
-    })
+    table = latest[
+        [
+            "tags.policy",
+            "metrics.ctr",
+            "metrics.avg_reward",
+            "metrics.cumulative_regret",
+        ]
+    ].rename(
+        columns={
+            "tags.policy": "policy",
+            "metrics.ctr": "ctr",
+            "metrics.avg_reward": "avg_reward",
+            "metrics.cumulative_regret": "cumulative_regret",
+        }
+    )
     st.dataframe(table, use_container_width=True)
     fig = px.bar(table, x="policy", y="cumulative_regret", title="Cumulative regret by policy")
     st.plotly_chart(fig, use_container_width=True)
@@ -74,10 +84,16 @@ drift_runs = _fetch_runs("drift_monitoring")
 if drift_runs.empty:
     st.info("No drift checks logged yet -- run `python -m mlops.drift_report`.")
 else:
-    drift_table = drift_runs[[
-        "start_time", "metrics.dataset_drift", "metrics.number_of_drifted_columns",
-    ]].rename(columns={
-        "metrics.dataset_drift": "dataset_drift",
-        "metrics.number_of_drifted_columns": "number_of_drifted_columns",
-    })
+    drift_table = drift_runs[
+        [
+            "start_time",
+            "metrics.dataset_drift",
+            "metrics.number_of_drifted_columns",
+        ]
+    ].rename(
+        columns={
+            "metrics.dataset_drift": "dataset_drift",
+            "metrics.number_of_drifted_columns": "number_of_drifted_columns",
+        }
+    )
     st.dataframe(drift_table, use_container_width=True)

@@ -3,6 +3,7 @@
 Unlike the original DAG, this version never creates a fresh synthetic replay log when
 retraining. It learns from the feedback events produced by the running service.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,6 +69,7 @@ def _collect(**context) -> None:
 #     ready = summary.get("monitoring_ready", False)
 #     return "update_features" if (force or (ready and drift)) else "no_drift"
 
+
 def _check_drift(**context) -> str:
     from mlops.drift_report import build_windows, compute_drift
     from mlops.tracking import log_drift_summary
@@ -98,14 +100,8 @@ def _check_drift(**context) -> str:
 
     print(f"Monitoring ready     : {summary.get('monitoring_ready')}")
     print(f"Dataset drift        : {summary.get('dataset_drift')}")
-    print(
-        f"Drifted columns      : "
-        f"{summary.get('number_of_drifted_columns')}"
-    )
-    print(
-        f"Drift share           : "
-        f"{summary.get('share_of_drifted_columns')}"
-    )
+    print(f"Drifted columns      : {summary.get('number_of_drifted_columns')}")
+    print(f"Drift share           : {summary.get('share_of_drifted_columns')}")
 
     print("-" * 70)
     print("Complete drift summary:")
@@ -275,7 +271,10 @@ def _evaluate_canary(**context) -> str:
 
     if production_metrics is None:
         return "promote"
-    if candidate_metrics["avg_reward"] > production_metrics.get("avg_reward", -999.0) + CANARY_MARGIN:
+    if (
+        candidate_metrics["avg_reward"]
+        > production_metrics.get("avg_reward", -999.0) + CANARY_MARGIN
+    ):
         return "promote"
     return "rollback"
 
@@ -311,7 +310,9 @@ with DAG(
     retrain = PythonOperator(task_id="retrain", python_callable=_retrain)
     evaluate = PythonOperator(task_id="evaluate", python_callable=_evaluate)
     register = PythonOperator(task_id="register", python_callable=_register)
-    evaluate_canary = BranchPythonOperator(task_id="evaluate_canary", python_callable=_evaluate_canary)
+    evaluate_canary = BranchPythonOperator(
+        task_id="evaluate_canary", python_callable=_evaluate_canary
+    )
     promote = PythonOperator(task_id="promote", python_callable=_promote)
     rollback = PythonOperator(task_id="rollback", python_callable=_rollback)
 

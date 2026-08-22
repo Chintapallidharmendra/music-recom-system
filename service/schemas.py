@@ -1,5 +1,6 @@
 """Pydantic request/response models matching contracts/openapi_notes.md exactly.
 No undocumented params -- /docs must render exactly these four routes' shapes."""
+
 from typing import Literal
 
 from pydantic import BaseModel

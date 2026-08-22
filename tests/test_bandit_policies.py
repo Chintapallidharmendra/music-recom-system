@@ -3,6 +3,7 @@ select_action(context, arms) -> arm in arms and update(arm_id, context, reward) 
 raising -- this is the contract service/main.py relies on to swap policies via a config
 flag with zero code changes.
 """
+
 import numpy as np
 import pytest
 

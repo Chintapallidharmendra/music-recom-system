@@ -4,6 +4,7 @@ context = [recency-weighted genre affinity (8)] + [mean audio features of last N
 Cold-start users (no history) get a uniform genre vector + zero audio vector -- never raises
 on an unknown user_id.
 """
+
 import numpy as np
 import pandas as pd
 
@@ -19,13 +20,15 @@ CONTEXT_DIM = len(GENRES) + AUDIO_FEATURE_DIM
 
 
 def _audio_vector(row: pd.Series) -> np.ndarray:
-    return np.concatenate([
-        np.asarray(row["mfcc_mean"], dtype=np.float64),
-        np.asarray(row["mfcc_var"], dtype=np.float64),
-        np.asarray(row["chroma_mean"], dtype=np.float64),
-        [float(row["tempo"])],
-        np.asarray(row["contrast_mean"], dtype=np.float64),
-    ])
+    return np.concatenate(
+        [
+            np.asarray(row["mfcc_mean"], dtype=np.float64),
+            np.asarray(row["mfcc_var"], dtype=np.float64),
+            np.asarray(row["chroma_mean"], dtype=np.float64),
+            [float(row["tempo"])],
+            np.asarray(row["contrast_mean"], dtype=np.float64),
+        ]
+    )
 
 
 def default_context() -> np.ndarray:
@@ -54,14 +57,20 @@ def build_user_context(
         rows = live_plays.get(user_id, [])
         if rows:
             live_df = pd.DataFrame(rows)
-            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(None)
+            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(
+                None
+            )
             live_df = live_df[["user_id", "timestamp", "track_id"]]
             user_plays = pd.concat([user_plays, live_df], ignore_index=True)
     elif isinstance(live_plays, pd.DataFrame) and not live_plays.empty:
         live_df = live_plays[live_plays["user_id"] == user_id].copy()
         if not live_df.empty:
-            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(None)
-            user_plays = pd.concat([user_plays, live_df[["user_id", "timestamp", "track_id"]]], ignore_index=True)
+            live_df["timestamp"] = pd.to_datetime(live_df["timestamp"], utc=True).dt.tz_localize(
+                None
+            )
+            user_plays = pd.concat(
+                [user_plays, live_df[["user_id", "timestamp", "track_id"]]], ignore_index=True
+            )
 
     if user_plays.empty:
         return default_context()

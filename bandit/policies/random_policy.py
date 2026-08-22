@@ -1,4 +1,5 @@
 """Random policy -- baseline every other policy must beat on cumulative regret."""
+
 import numpy as np
 
 

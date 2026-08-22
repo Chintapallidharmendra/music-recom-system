@@ -1,5 +1,6 @@
 """Epsilon-greedy: explore uniformly at random with prob epsilon, else exploit the
 arm with the highest running-average reward seen so far (unseen arms default to 0.0)."""
+
 import numpy as np
 
 from bandit.policies._common import ArmStateDict, zero_float, zero_int

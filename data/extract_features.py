@@ -5,9 +5,11 @@ track_id, genre, mfcc_mean[20], mfcc_var[20], chroma_mean[12], tempo, contrast_m
 
 Run once; cache the output. Re-run only if extraction logic changes.
 """
+
 import argparse
 import os
 import subprocess
+
 # Must be set before numpy/librosa import spin up BLAS threads, otherwise
 # multiprocessing.Pool workers oversubscribe cores against each other.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -26,19 +28,26 @@ def load_small_subset() -> pd.DataFrame:
     tracks = pd.read_csv(f"{FMA_METADATA_DIR}/tracks.csv", index_col=0, header=[0, 1, 2])
     tracks.columns = tracks.columns.droplevel(2)
     small = tracks[tracks[("set", "subset")] == "small"]
-    return small[[("track", "genre_top")]].droplevel(0, axis=1).rename(
-        columns={"genre_top": "genre"}
+    return (
+        small[[("track", "genre_top")]].droplevel(0, axis=1).rename(columns={"genre_top": "genre"})
     )
+
 
 def load_audio_ffmpeg(path, sr=22050):
     command = [
         "ffmpeg",
-        "-v", "error",
-        "-i", str(path),
-        "-f", "f32le",
-        "-acodec", "pcm_f32le",
-        "-ac", "1",
-        "-ar", str(sr),
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-f",
+        "f32le",
+        "-acodec",
+        "pcm_f32le",
+        "-ac",
+        "1",
+        "-ar",
+        str(sr),
         "pipe:1",
     ]
 
@@ -55,9 +64,7 @@ def load_audio_ffmpeg(path, sr=22050):
             errors="replace",
         )
 
-        raise RuntimeError(
-            f"FFmpeg failed: {error}"
-        )
+        raise RuntimeError(f"FFmpeg failed: {error}")
 
     y = np.frombuffer(
         result.stdout,
@@ -65,11 +72,10 @@ def load_audio_ffmpeg(path, sr=22050):
     )
 
     if y.size == 0:
-        raise RuntimeError(
-            "FFmpeg returned empty audio"
-        )
+        raise RuntimeError("FFmpeg returned empty audio")
 
     return y, sr
+
 
 def track_audio_path(track_id: int) -> str:
     tid_str = f"{track_id:06d}"
@@ -81,15 +87,9 @@ def extract_features(path: str) -> dict:
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
     # tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    onset_env = librosa.onset.onset_strength(
-    y=y,
-    sr=sr
-    )
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
 
-    tempo = librosa.feature.tempo(
-    onset_envelope=onset_env,
-    sr=sr
-    )[0]
+    tempo = librosa.feature.tempo(onset_envelope=onset_env, sr=sr)[0]
     contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
     return {
         "mfcc_mean": mfcc.mean(axis=1).astype(np.float32),

@@ -9,6 +9,7 @@ function of user_id) so two tracks in the same genre aren't equally rewarding.
 Used by bandit/replay_evaluator.py for offline replay AND imported live by service/main.py /
 service/demo_loadgen.py, since there are no real users to click /feedback.
 """
+
 import numpy as np
 import pandas as pd
 
@@ -46,8 +47,7 @@ class RewardSimulator:
         features = pd.read_parquet(features_path)
         self._genre = dict(zip(features["track_id"], features["genre"]))
         self._audio = {
-            row["track_id"]: self._normalized_audio_vector(row)
-            for _, row in features.iterrows()
+            row["track_id"]: self._normalized_audio_vector(row) for _, row in features.iterrows()
         }
         audio_dim = len(next(iter(self._audio.values())))
         self._audio_dim = audio_dim

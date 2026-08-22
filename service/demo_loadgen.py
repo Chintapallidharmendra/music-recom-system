@@ -3,6 +3,7 @@ running service instance. There are no real users to click /feedback in a solo a
 build, so this script plays that role for the end-to-end demo (see PROJECT_PLAN.md's
 end-to-end smoke sequence).
 """
+
 import argparse
 
 import httpx

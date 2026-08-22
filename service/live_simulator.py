@@ -3,6 +3,7 @@
 It continuously exercises /recommend -> synthetic user behavior -> /feedback.
 Drift is injected into the *user behavior*, not into the monitoring data directly.
 """
+
 import argparse
 import time
 
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from bandit.reward_simulator import RewardSimulator
+
 
 class LiveUserBehaviorSimulator:
     def __init__(self, scenario="normal", start_after=500, magnitude=0.6, seed=0):

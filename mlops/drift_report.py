@@ -5,6 +5,7 @@ Current data = feedback events produced by the live simulator.
 The monitor therefore compares the system's historical population with what is
 actually happening online instead of splitting one static file in half.
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -58,8 +59,7 @@ def _reference_frame(plays: pd.DataFrame, features: pd.DataFrame) -> pd.DataFram
     merged = plays.merge(_flatten_features(features), on="track_id", how="inner")
     sim = RewardSimulator()
     merged["reward"] = [
-        sim.expected_reward(row.user_id, row.track_id)
-        for row in merged.itertuples(index=False)
+        sim.expected_reward(row.user_id, row.track_id) for row in merged.itertuples(index=False)
     ]
     return merged[DRIFT_COLUMNS]
 
@@ -88,6 +88,7 @@ def _current_frame(live: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
 #     merged = merged.sort_values("timestamp")
 #     midpoint = len(merged) // 2
 #     return merged.iloc[:midpoint][DRIFT_COLUMNS], merged.iloc[midpoint:][DRIFT_COLUMNS]
+
 
 def build_windows(
     plays: pd.DataFrame,
@@ -173,6 +174,7 @@ def main():
     print(summary)
 
     from mlops.tracking import log_drift_summary
+
     log_drift_summary(summary)
 
     if summary["monitoring_ready"]:

@@ -8,6 +8,7 @@ NO-GO — use the synthetic interaction layer (data/synth_user_profiles.py,
 data/generate_synthetic_logs.py) instead. This script exists so the finding is reproducible,
 not so a fresh judgment call gets made at runtime.
 """
+
 import argparse
 
 import pandas as pd
@@ -30,7 +31,9 @@ def load_fma_small_pairs() -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--limit-rows", type=int, default=None,
+        "--limit-rows",
+        type=int,
+        default=None,
         help="only scan the first N Last.fm rows (for a fast smoke test)",
     )
     args = parser.parse_args()

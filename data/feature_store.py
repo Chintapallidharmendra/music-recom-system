@@ -3,6 +3,7 @@
 Loads the whole parquet into an in-memory dict at startup so get_features() is a plain
 dict lookup (<5ms warm, no disk I/O per call) -- this is what service/main.py imports.
 """
+
 import time
 
 import numpy as np
@@ -15,8 +16,7 @@ class FeatureStore:
     def __init__(self, path: str = "data/features.parquet"):
         df = pd.read_parquet(path)
         self._features = {
-            row["track_id"]: _audio_vector(row).astype(np.float32)
-            for _, row in df.iterrows()
+            row["track_id"]: _audio_vector(row).astype(np.float32) for _, row in df.iterrows()
         }
         self._genres = dict(zip(df["track_id"], df["genre"]))
         self.n_features = len(next(iter(self._features.values())))

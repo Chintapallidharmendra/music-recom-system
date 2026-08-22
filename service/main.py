@@ -4,6 +4,7 @@ see contracts/kafka_topics.md and PROJECT_PLAN.md's "swap policies with zero cod
 acceptance criterion). Kafka wiring is soft-fail: the service still serves recommendations
 if Kafka is down, and /health reports the degraded state rather than crashing.
 """
+
 import json
 import logging
 import os
@@ -46,9 +47,7 @@ POLICY_FACTORIES = {
     "epsilon_greedy": lambda: EpsilonGreedyPolicy(epsilon=0.1, seed=0),
     "ucb1": lambda: UCB1Policy(),
     "thompson_sampling": lambda: ThompsonSamplingPolicy(seed=0),
-    "linear_thompson_sampling": lambda: LinearThompsonSamplingPolicy(
-        v=0.3, seed=0, context_dim=8
-    ),
+    "linear_thompson_sampling": lambda: LinearThompsonSamplingPolicy(v=0.3, seed=0, context_dim=8),
     "linucb": lambda: LinUCBPolicy(alpha=1.0, context_dim=8),
 }
 POLICY_NAME = os.environ.get("BANDIT_POLICY", "linucb")

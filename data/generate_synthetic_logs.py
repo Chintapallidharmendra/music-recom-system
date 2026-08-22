@@ -20,6 +20,7 @@ day), simulating a platform-wide genre trend. That shifts genre and its correlat
 features (tempo, mfcc/chroma/contrast means), which is what DRIFT_COLUMNS in
 drift_report.py actually measures.
 """
+
 import argparse
 from datetime import timedelta
 
@@ -149,10 +150,15 @@ def main():
     df.to_parquet(args.out, index=False)
     print(f"wrote {len(df)} plays across {df['user_id'].nunique()} users to {args.out}")
     print(f"timestamp range: {df['timestamp'].min()} .. {df['timestamp'].max()}")
-    print(f"drift injected: {args.inject_drift}" + (
-        f" (starts {args.drift_start_frac:.0%} into history, "
-        f"strength {args.drift_strength:.2f})" if args.inject_drift else ""
-    ))
+    print(
+        f"drift injected: {args.inject_drift}"
+        + (
+            f" (starts {args.drift_start_frac:.0%} into history, "
+            f"strength {args.drift_strength:.2f})"
+            if args.inject_drift
+            else ""
+        )
+    )
 
 
 if __name__ == "__main__":

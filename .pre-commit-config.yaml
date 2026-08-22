@@ -1,0 +1,10 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Match the ruff version used in requirements.txt / CI
+    rev: v0.5.0
+    hooks:
+      # Run the linter and auto-fix simple lint violations
+      - id: ruff
+        args: [ --fix ]
+      # Run the formatter to check and clean up code formatting
+      - id: ruff-format

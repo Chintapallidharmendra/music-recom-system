@@ -1,6 +1,7 @@
 """Linear Thompson Sampling: Bayesian linear regression per arm over the context
 vector. Contextual counterpart to plain Thompson Sampling -- pairs with LinUCB as a
 Bayesian-vs-frequentist comparison of contextual policies (see PROJECT_PLAN.md)."""
+
 import numpy as np
 
 from bandit.policies._common import ridge_inverse

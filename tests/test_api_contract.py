@@ -4,13 +4,14 @@ routes, correct request/response shapes, no undocumented params beyond the docum
 Kafka is expected to be unreachable in this environment -- these tests exercise the
 soft-fail path, not the Kafka round-trip (covered by PROJECT_PLAN.md's smoke sequence).
 """
+
 import pytest
 from fastapi.testclient import TestClient
 
 from service.main import app
 
 EXPECTED_ROUTES = {"/health", "/recommend", "/feedback", "/metrics"}
-ADMIN_ROUTES = {"/admin/reload-policy"}
+ADMIN_ROUTES = {"/admin/reload-policy", "/feedback/direct"}
 
 
 @pytest.fixture(scope="module")

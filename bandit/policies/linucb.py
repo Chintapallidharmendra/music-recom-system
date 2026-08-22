@@ -1,6 +1,7 @@
 """LinUCB: ridge regression per arm with a UCB exploration bonus. Frequentist
 counterpart to linear_thompson_sampling.py. Matrix inversion is ridge-guarded so
 1000+ updates never produce NaNs even if an arm's design matrix gets ill-conditioned."""
+
 import numpy as np
 
 from bandit.policies._common import ridge_inverse

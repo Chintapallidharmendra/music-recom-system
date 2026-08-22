@@ -25,6 +25,7 @@ def sample_action(user_id: str, track_id: str) -> str:
     a content-similarity term against the track's audio features, plus novelty_bias-weighted
     noise so the same (user, track) pair isn't perfectly deterministic."""
 
+
 def expected_reward(user_id: str, track_id: str) -> float:
     """Deterministic ground-truth expected reward for a (user, track) pair, used by
     replay_evaluator.py for counterfactual/offline evaluation without resampling noise."""

@@ -17,7 +17,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install lint + test dependencies
-        run: pip install ruff==0.5.0 pytest==8.2.2
+        run: pip install ruff==0.5.0 pytest==8.2.2 pip-audit==2.7.3
 
       - name: Install runtime dependencies used by tests
         run: |
@@ -28,10 +28,14 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Unit tests -- bandit policies (no fixture data required)
-        run: pytest tests/test_bandit_policies.py -v
+      - name: Format Check (ruff)
+        run: ruff format --check .
 
-      # tests/test_api_contract.py needs data/{features,synthetic_logs,user_profiles}.parquet,
-      # which come from Track A's pipeline over the (gitignored) FMA-small audio dataset --
-      # not available in CI. Contract tests run locally against real generated fixtures;
-      # this job covers the fully hermetic bandit-policy suite on every push.
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements.txt
+
+      - name: Unit + Contract tests (pytest)
+        run: pytest tests/ -v
+
+      - name: Build Docker image
+        run: docker build -t music-recom-service -f service/Dockerfile .

@@ -5,14 +5,21 @@ contracts/synthetic_data.md. Both generate_synthetic_logs.py and
 bandit/reward_simulator.py read data/user_profiles.parquet produced here;
 neither should recompute its own affinity model.
 """
+
 import argparse
 
 import numpy as np
 import pandas as pd
 
 GENRES = [
-    "Electronic", "Experimental", "Folk", "Hip-Hop",
-    "Instrumental", "International", "Pop", "Rock",
+    "Electronic",
+    "Experimental",
+    "Folk",
+    "Hip-Hop",
+    "Instrumental",
+    "International",
+    "Pop",
+    "Rock",
 ]
 
 
@@ -22,11 +29,13 @@ def generate_user_profiles(n_users: int, seed: int) -> pd.DataFrame:
     # rather than uniform(1) which would make every user near-uniform across genres.
     affinities = rng.dirichlet(alpha=np.full(len(GENRES), 0.5), size=n_users)
     novelty_bias = rng.beta(a=2, b=8, size=n_users)  # mostly low, occasional exploratory users
-    return pd.DataFrame({
-        "user_id": [f"user_{i:06d}" for i in range(n_users)],
-        "genre_affinity": list(affinities.astype(np.float32)),
-        "novelty_bias": novelty_bias.astype(np.float32),
-    })
+    return pd.DataFrame(
+        {
+            "user_id": [f"user_{i:06d}" for i in range(n_users)],
+            "genre_affinity": list(affinities.astype(np.float32)),
+            "novelty_bias": novelty_bias.astype(np.float32),
+        }
+    )
 
 
 def main():

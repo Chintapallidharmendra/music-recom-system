@@ -2,6 +2,7 @@
 CTR, average reward, and cumulative regret. Acceptance criterion: LinUCB (and
 Linear Thompson Sampling) must beat Random on cumulative regret.
 """
+
 import argparse
 
 import pandas as pd

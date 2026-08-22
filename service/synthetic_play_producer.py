@@ -10,6 +10,7 @@ upload) since it's simulating raw listening history, not actual policy-served
 recommendations. Check that file / with your team before reusing this topic name if the
 topic list is meant to be frozen.
 """
+
 import argparse
 import json
 import logging
@@ -32,7 +33,11 @@ def _effective_affinity(
     affinity: np.ndarray, elapsed_seconds: float, ramp_seconds: float, drift_strength: float
 ) -> np.ndarray:
     """Blend toward DRIFT_TARGET_AFFINITY as elapsed_seconds -> ramp_seconds."""
-    w = drift_strength if ramp_seconds <= 0 else drift_strength * min(1.0, elapsed_seconds / ramp_seconds)
+    w = (
+        drift_strength
+        if ramp_seconds <= 0
+        else drift_strength * min(1.0, elapsed_seconds / ramp_seconds)
+    )
     blended = (1 - w) * affinity + w * DRIFT_TARGET_AFFINITY
     return blended / blended.sum()
 
@@ -112,12 +117,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bootstrap-servers", default="localhost:9092")
     parser.add_argument(
-        "--interval-seconds", type=float, default=0.2,
+        "--interval-seconds",
+        type=float,
+        default=0.2,
         help="Sleep between events -- lower = higher throughput.",
     )
     parser.add_argument("--inject-drift", action="store_true")
     parser.add_argument(
-        "--ramp-seconds", type=float, default=120.0,
+        "--ramp-seconds",
+        type=float,
+        default=120.0,
         help="Wall-clock seconds for drift to reach full strength (default 2 min, "
         "so you can watch it happen during a demo).",
     )

@@ -8,6 +8,7 @@ regenerate-then-rerun cycle.
 Run alongside service/synthetic_play_producer.py --inject-drift:
     python -m mlops.drift_stream_monitor
 """
+
 import argparse
 import json
 from collections import deque
@@ -74,12 +75,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bootstrap-servers", default="localhost:9092")
     parser.add_argument(
-        "--reference-size", type=int, default=300,
+        "--reference-size",
+        type=int,
+        default=300,
         help="Plays frozen as the reference distribution before checks start.",
     )
-    parser.add_argument("--window-size", type=int, default=300, help="Sliding 'current' window size.")
     parser.add_argument(
-        "--check-every", type=int, default=50,
+        "--window-size", type=int, default=300, help="Sliding 'current' window size."
+    )
+    parser.add_argument(
+        "--check-every",
+        type=int,
+        default=50,
         help="Re-run the drift check every N new plays once both windows are full.",
     )
     args = parser.parse_args()

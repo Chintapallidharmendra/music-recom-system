@@ -4,6 +4,7 @@ service/main.py (one run per service lifetime, with periodic live-metric snapsho
 plus the Model Registry helpers mlops/dags/retrain_policy.py and service/main.py's policy
 poller use to drive the drift-triggered canary lifecycle (see PROJECT_PLAN.md).
 """
+
 import os
 import pickle
 import threading

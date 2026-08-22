@@ -1,5 +1,6 @@
 """UCB1: pick every unseen arm at least once, then the arm maximizing
 value + sqrt(2 * ln(total_pulls) / arm_pulls)."""
+
 import numpy as np
 
 from bandit.policies._common import ArmStateDict, zero_float, zero_int
@@ -17,10 +18,7 @@ class UCB1Policy:
             return unseen[0]
 
         t = max(self._t, 1)
-        scores = [
-            self._values[a] + np.sqrt(2 * np.log(t) / self._counts[a])
-            for a in arms
-        ]
+        scores = [self._values[a] + np.sqrt(2 * np.log(t) / self._counts[a]) for a in arms]
         return arms[int(np.argmax(scores))]
 
     def update(self, arm_id: str, context: np.ndarray, reward: float) -> None:

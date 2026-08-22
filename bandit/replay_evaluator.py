@@ -9,6 +9,7 @@ in PROJECT_PLAN.md. Since this is a synthetic environment, ground-truth
 reward_simulator.expected_reward() is also used to compute regret against the true
 optimal arm for matched events -- a luxury real-world replay evaluation doesn't have.
 """
+
 import argparse
 
 import numpy as np
@@ -57,13 +58,15 @@ def generate_replay_log(
         action = sim.sample_action(user_id, logged_arm, rng)
         reward = REWARD_MAP[action]
 
-        events.append({
-            "user_id": user_id,
-            "context": context,
-            "candidates": candidate_pool,
-            "logged_arm": logged_arm,
-            "reward": reward,
-        })
+        events.append(
+            {
+                "user_id": user_id,
+                "context": context,
+                "candidates": candidate_pool,
+                "logged_arm": logged_arm,
+                "reward": reward,
+            }
+        )
     return events
 
 

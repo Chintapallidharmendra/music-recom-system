@@ -4,6 +4,7 @@ Fails soft: if Kafka isn't reachable (e.g. local dev without docker-compose up),
 service should still serve /recommend and /feedback -- /health is what reports the
 Kafka-down state, not a hard crash on every request.
 """
+
 import json
 import logging
 import os
@@ -43,8 +44,10 @@ class RecommendationEventProducer:
         self, user_id: str, track_id: str, policy: str, timestamp: str
     ) -> None:
         payload = {
-            "user_id": user_id, "track_id": track_id,
-            "policy": policy, "timestamp": timestamp,
+            "user_id": user_id,
+            "track_id": track_id,
+            "policy": policy,
+            "timestamp": timestamp,
         }
         self._send(RECOMMENDATION_EVENTS_TOPIC, payload)
 
@@ -52,8 +55,11 @@ class RecommendationEventProducer:
         self, user_id: str, track_id: str, action: str, reward: float, timestamp: str
     ) -> None:
         payload = {
-            "user_id": user_id, "track_id": track_id, "action": action,
-            "reward": reward, "timestamp": timestamp,
+            "user_id": user_id,
+            "track_id": track_id,
+            "action": action,
+            "reward": reward,
+            "timestamp": timestamp,
         }
         self._send(USER_FEEDBACK_TOPIC, payload)
 

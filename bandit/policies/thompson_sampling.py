@@ -1,5 +1,6 @@
 """Thompson Sampling with Beta priors (non-contextual). Reward is binarized to a
 success signal (reward > 0) since our reward map isn't already Bernoulli."""
+
 import numpy as np
 
 from bandit.policies._common import ArmStateDict, one_float
@@ -13,8 +14,7 @@ class ThompsonSamplingPolicy:
 
     def select_action(self, context: np.ndarray, arms: list) -> str:
         samples = [
-            self._rng.beta(self._alpha.get_or_create(a), self._beta.get_or_create(a))
-            for a in arms
+            self._rng.beta(self._alpha.get_or_create(a), self._beta.get_or_create(a)) for a in arms
         ]
         return arms[int(np.argmax(samples))]
 
