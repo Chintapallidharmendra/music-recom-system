@@ -15,6 +15,26 @@ EXPERIMENT_NAME = "music-bandit"
 POLICY_MODEL_NAME = "music-bandit-policy"
 
 
+def normalize_policy_tag(policy_name: str | None) -> str:
+    """Normalise internal policy ids to the short registry tags used in the UI and runs."""
+    key = (policy_name or "").strip().lower().replace(" ", "_")
+    mapping = {
+        "linucb": "LinUCB",
+        "lin_ucb": "LinUCB",
+        "linear_thompson_sampling": "LinTS",
+        "linear_thompson": "LinTS",
+        "lints": "LinTS",
+        "lin_ts": "LinTS",
+    }
+    if key in mapping:
+        return mapping[key]
+    if key.startswith("linear_thompson"):
+        return "LinTS"
+    if key.startswith("linucb"):
+        return "LinUCB"
+    return (key.replace("_", " ").title()).replace(" ", "")
+
+
 def init_tracking() -> None:
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "file:./mlruns")
     mlflow.set_tracking_uri(tracking_uri)
@@ -88,19 +108,26 @@ class ServiceMetricsLogger:
 # vocabulary); mlflow 2.14 deprecates stages in favor of aliases but they remain functional.
 
 
-def register_policy(artifact_path: str, metrics: dict, model_name: str) -> int:
+def register_policy(artifact_path: str, metrics: dict, model_name: str, policy_name: str | None = None) -> int:
     """Logs the pickled policy + its offline-replay metrics as a run, registers that run's
     artifact as a new model version, and stages it as Staging (it hasn't earned
     Production yet -- see PROJECT_PLAN.md step 2)."""
     init_tracking()
+    tag = normalize_policy_tag(policy_name or model_name)
     with mlflow.start_run(run_name=f"register_{model_name}") as run:
         mlflow.set_tag("stage", "candidate")
-        mlflow.log_metrics(metrics)
+        numeric_metrics = {k: float(v) for k, v in metrics.items() if k != "policy_name"}
+        mlflow.log_metrics(numeric_metrics)
+        mlflow.set_tag("policy", tag)
+        # mlflow.log_metrics(metrics)
+        
+        
         mlflow.log_artifact(artifact_path, artifact_path="policy")
         model_uri = f"runs:/{run.info.run_id}/policy"
         result = mlflow.register_model(model_uri, model_name)
 
     client = MlflowClient()
+    client.set_model_version_tag(model_name, result.version, "policy", tag)
     client.transition_model_version_stage(model_name, result.version, stage="Staging")
     return int(result.version)
 

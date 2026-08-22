@@ -211,3 +211,13 @@ ruff check .           # lint
 `tests/test_bandit_policies.py` is fully hermetic (no fixture data needed) and is what CI
 runs on every push. `tests/test_api_contract.py` needs the generated parquet artifacts
 from the pipeline above, so it's run locally rather than in CI.
+
+
+# Postgres add airflow user
+airflow users create \
+  --username newadmin \
+  --firstname Admin \
+  --lastname User \
+  --role Admin \
+  --email admin1@example.com \
+  --password 'admin'

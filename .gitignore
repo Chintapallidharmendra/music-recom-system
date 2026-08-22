@@ -11,3 +11,4 @@ mlruns_backup*
 live_feedback.jsonl
 /datasets
 /graphify-out
+postgres-data/
