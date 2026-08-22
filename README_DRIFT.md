@@ -3,6 +3,7 @@
 Replace the corresponding files in the original project with the files in this patch.
 
 Files changed:
+
 - service/live_simulator.py (new)
 - service/main.py
 - data/build_user_context.py
@@ -11,6 +12,7 @@ Files changed:
 - docker-compose.yml (shared LIVE_FEEDBACK_PATH)
 
 Run:
+
 1. docker compose up --build
 2. python service/live_simulator.py --scenario normal --n 500 --interval 0.02
 3. python service/live_simulator.py --scenario preference_shift --n 3000 --start-after 500 --magnitude 0.8 --interval 0.02
@@ -20,3 +22,17 @@ The service persists feedback to /mlruns/live_feedback.jsonl, updates online pol
 and includes live interactions in the next user context. Airflow reads the same event store,
 checks drift every 15 minutes, trains a candidate from live events, evaluates it, and
 promotes or archives it through MLflow.
+
+## Live Simulator
+
+python -m service.live_simulator --scenario normal --n 5000 --interval 0.05
+
+## Observing Live Feedback
+
+tail -f mlruns/live_feedback.jsonl
+
+## Introducing Drift Through Live Simulator
+
+python -m service.live_simulator --scenario preference_shift --n 5000 --start-after 500 --magnitude 0.8 --interval 0.05
+
+python -m mlops.drift_report --live mlruns/live_feedback.jsonl
