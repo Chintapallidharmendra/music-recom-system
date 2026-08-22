@@ -116,13 +116,18 @@ def register_policy(artifact_path: str, metrics: dict, model_name: str, policy_n
     tag = normalize_policy_tag(policy_name or model_name)
     with mlflow.start_run(run_name=f"register_{model_name}") as run:
         mlflow.set_tag("stage", "candidate")
+        numeric_metrics = {k: float(v) for k, v in metrics.items() if k != "policy_name"}
+        mlflow.log_metrics(numeric_metrics)
         mlflow.set_tag("policy", tag)
-        mlflow.log_metrics(metrics)
+        # mlflow.log_metrics(metrics)
+        
+        
         mlflow.log_artifact(artifact_path, artifact_path="policy")
         model_uri = f"runs:/{run.info.run_id}/policy"
         result = mlflow.register_model(model_uri, model_name)
 
     client = MlflowClient()
+    client.set_model_version_tag(model_name, result.version, "policy", tag)
     client.transition_model_version_stage(model_name, result.version, stage="Staging")
     return int(result.version)
 

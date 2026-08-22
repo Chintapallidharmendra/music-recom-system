@@ -6,9 +6,11 @@ retraining. It learns from the feedback events produced by the running service.
 from __future__ import annotations
 
 import json
+
 import os
 import pickle
 from datetime import datetime, timedelta
+
 
 import numpy as np
 import pandas as pd
@@ -234,6 +236,11 @@ def _retrain_policy(policy_name: str, **context) -> None:
         raise ValueError(f"only {len(live)} live events; need {MIN_LIVE_EVENTS}")
 
     plays = pd.read_parquet("data/synthetic_logs.parquet")
+
+    sample_size = int(os.environ.get("SYNTHETIC_SAMPLE_SIZE", "10000"))
+    if len(plays) > sample_size:
+        plays = plays.sample(n=sample_size, random_state=42).reset_index(drop=True)
+
     features = pd.read_parquet("data/features.parquet")
 
     updates = _train_from_live_feedback(policy, live, plays, features)
@@ -247,6 +254,7 @@ def _retrain_policy(policy_name: str, **context) -> None:
 
     metrics = _evaluate_policy(policy, users, candidate_pool, plays, features)
     metrics["training_events"] = updates
+    metrics["policy_name"] = policy_name
 
     os.makedirs(CANDIDATE_ARTIFACT_DIR, exist_ok=True)
     path = os.path.join(CANDIDATE_ARTIFACT_DIR, f"candidate_{policy_name}_{context['run_id']}.pkl")
@@ -297,8 +305,11 @@ def _register(**context) -> None:
 def _evaluate_canary(**context) -> str:
     from mlops.tracking import get_latest_metrics_by_stage
 
-    candidate_metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="retrain")
-    production_metrics = get_latest_metrics_by_stage(MODEL_NAME, "Production")
+    candidate_metrics = context["ti"].xcom_pull(key="candidate_metrics", task_ids="select_best_candidate")
+    if candidate_metrics is None:
+        raise ValueError("candidate_metrics XCom missing from select_best_candidate")
+    
+    production_metrics = get_latest_metrics_by_stage(MODEL_NAME, "Production") or {}
     context["ti"].xcom_push(key="production_metrics", value=production_metrics)
 
     if production_metrics is None:
@@ -322,7 +333,11 @@ def _rollback(**context) -> None:
     archive_version(MODEL_NAME, version)
 
 
-default_args = {"owner": "music-bandit", "retries": 0}
+default_args = {
+    "owner": "music-bandit",
+    "retries": 0,
+    "priority_weight": 1000,
+}
 
 with DAG(
     dag_id="retrain_policy",
@@ -332,26 +347,28 @@ with DAG(
     catchup=False,
     tags=["music-bandit", "live-drift"],
 ) as dag:
-    collect = PythonOperator(task_id="collect", python_callable=_collect)
-    check_drift = BranchPythonOperator(task_id="check_drift", python_callable=_check_drift)
-    no_drift = EmptyOperator(task_id="no_drift")
-    update_features = PythonOperator(task_id="update_features", python_callable=_update_features)
+    collect = PythonOperator(task_id="collect", python_callable=_collect, priority_weight=500)
+    check_drift = BranchPythonOperator(task_id="check_drift", python_callable=_check_drift, priority_weight=1000)
+    no_drift = EmptyOperator(task_id="no_drift", priority_weight=100)
+    update_features = PythonOperator(task_id="update_features", python_callable=_update_features, priority_weight=1000)
     retrain_linucb = PythonOperator(
         task_id="retrain_linucb",
         python_callable=_retrain_policy,
         op_kwargs={"policy_name": "LinUCB"},
+        priority_weight=2000,
     )
     retrain_lints = PythonOperator(
         task_id="retrain_lints",
         python_callable=_retrain_policy,
         op_kwargs={"policy_name": "LinTS"},
+        priority_weight=2000,
     )
-    select_best_candidate = PythonOperator(task_id="select_best_candidate", python_callable=_select_best_candidate)
-    evaluate = PythonOperator(task_id="evaluate", python_callable=_evaluate)
-    register = PythonOperator(task_id="register", python_callable=_register)
-    evaluate_canary = BranchPythonOperator(task_id="evaluate_canary", python_callable=_evaluate_canary)
-    promote = PythonOperator(task_id="promote", python_callable=_promote)
-    rollback = PythonOperator(task_id="rollback", python_callable=_rollback)
+    select_best_candidate = PythonOperator(task_id="select_best_candidate", python_callable=_select_best_candidate, priority_weight=1500)
+    evaluate = PythonOperator(task_id="evaluate", python_callable=_evaluate, priority_weight=1500)
+    register = PythonOperator(task_id="register", python_callable=_register, priority_weight=1500)
+    evaluate_canary = BranchPythonOperator(task_id="evaluate_canary", python_callable=_evaluate_canary, priority_weight=1500)
+    promote = PythonOperator(task_id="promote", python_callable=_promote, priority_weight=1500)
+    rollback = PythonOperator(task_id="rollback", python_callable=_rollback, priority_weight=1500)
 
     collect >> check_drift >> [update_features, no_drift]
     update_features >> [retrain_linucb, retrain_lints] >> select_best_candidate >> evaluate >> register >> evaluate_canary >> [promote, rollback]
